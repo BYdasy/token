@@ -1,0 +1,56 @@
+/* 用户端统一输入层级：清楚的边界、正文和聚焦状态，覆盖页面及传送到 body 的表单。 */
+:root {
+  --user-input-border: var(--vora-border);
+  --user-input-background: var(--vora-surface);
+  --user-input-text: var(--vora-primary);
+  --user-input-placeholder: var(--vora-muted);
+  --van-field-placeholder-text-color: var(--user-input-placeholder);
+  --van-field-input-text-color: var(--user-input-text);
+  --van-field-label-color: var(--vora-ink);
+}
+#app .van-field,
+.van-popup .van-field {
+  margin: 12px 0;
+  padding: 14px 15px;
+  min-width: 0;
+  border: 1px solid var(--user-input-border);
+  border-radius: 12px;
+  background: var(--user-input-background);
+  transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+#app .van-field::after,
+.van-popup .van-field::after { display: none; }
+#app .van-field:focus-within,
+.van-popup .van-field:focus-within {
+  border-color: var(--vora-primary);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(119, 62, 81, 0.110);
+}
+.van-field .van-field__label { color: var(--vora-ink); font-weight: 500; line-height: 1.55; }
+.van-field .van-field__control { color: var(--user-input-text); font-size: 15px; line-height: 1.6; min-height: 25px; }
+.van-field .van-field__control::placeholder { color: var(--user-input-placeholder); opacity: 1; font-size: 14px; }
+.van-field .van-field__control:disabled { color: var(--vora-muted); -webkit-text-fill-color: var(--vora-muted); opacity: 1; cursor: not-allowed; }
+.van-field--error { --user-input-border: #cf5862; }
+.van-field .van-field__error-message { color: #b42332; margin-top: 6px; }
+.van-field .van-field__right-icon { color: var(--vora-muted); }
+/* 搜索已有外层容器，不重复叠加两层边框。 */
+#app .van-search .van-field,
+.van-popup .van-search .van-field { margin: 0; padding: 5px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.van-search .van-search__content { border: 1px solid var(--user-input-border); border-radius: 10px; background: var(--user-input-background); }
+.van-search .van-search__content:focus-within { border-color: var(--vora-primary); box-shadow: 0 0 0 3px rgba(119, 62, 81, 0.110); }
+/* 原生输入同样可辨识，不覆盖 Vant 内层输入、开关或数量步进器。 */
+:where(#app, .van-popup) :is(input:not([type]), input[type='text'], input[type='email'], input[type='password'], input[type='tel'], input[type='number'], input[type='search'], textarea):not(.van-field__control):not(.van-stepper__input):not(.ui-password-username) {
+  min-height: 44px;
+  padding: 11px 13px;
+  border: 1px solid var(--user-input-border);
+  border-radius: 10px;
+  background: var(--user-input-background);
+  color: var(--user-input-text);
+  font: inherit;
+}
+:where(#app, .van-popup) :is(input, textarea):not(.van-field__control):not(.van-stepper__input)::placeholder { color: var(--user-input-placeholder); opacity: 1; }
+:where(#app, .van-popup) :is(input, textarea, select):not(.van-field__control):not(.van-stepper__input):focus-visible { outline: 2px solid var(--vora-primary); outline-offset: 2px; }
+@media (max-width: 700px) {
+  .van-field .van-field__control { font-size: 16px; }
+  #app .van-field, .van-popup .van-field { padding: 13px 12px; }
+}

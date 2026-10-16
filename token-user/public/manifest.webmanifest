@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "AI Vora",
+  "short_name": "AI Vora",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fdf1e9",
+  "theme_color": "#fdf1e9",
+  "icons": [
+    { "src": "icon-192.png?v=20261014-vora-mobile", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png?v=20261014-vora-mobile", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "favicon.svg?v=20261014-vora-mobile", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
+

@@ -1,0 +1,36 @@
+/* 两端沿用同一份表单，统一居中弹窗，限制高度并允许内部滚动。 */
+.ui-responsive-popup.van-popup {
+  box-sizing: border-box;
+  max-height: min(86dvh, 760px);
+  overscroll-behavior: contain;
+}
+.ui-responsive-popup.van-popup--center {
+  width: min(580px, calc(100vw - 48px));
+  left: 50% !important;
+  top: 50%;
+  bottom: auto;
+  right: auto;
+  margin: 0;
+  transform: translate(-50%, -50%) !important;
+  border-radius: 16px;
+  background: var(--vora-surface);
+}
+.ui-responsive-popup .van-popup__close-icon { top: 12px; right: 12px; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: var(--vora-primary); background: var(--vora-soft-surface); }
+/* 原生滚动条仍可滚动，边缘沿弹窗圆角裁切，避免右侧出现方角。 */
+@media (min-width: 701px) {
+  .van-popup--round.van-popup--center { border-radius: 16px; clip-path: inset(0 round 16px); }
+  .van-popup--center, .van-popup--center :is(.ui-selection-list,.v9-home-popup-body) { scrollbar-width: thin; scrollbar-color: #c3a7ad transparent; }
+}
+@media(max-width:700px) { .ui-responsive-popup.van-popup--center { width: calc(100vw - 28px); max-height: 82dvh; } }
+.ui-language-row > strong { flex: 1; min-width: 0; }
+.ui-address-picker .ui-channel-option small { overflow-wrap: anywhere; }
+.ui-address-picker .ui-channel-option:disabled { opacity: .55; cursor: not-allowed; }
+.ui-saved-wallet-note { margin: -7px 0 16px; color: var(--vora-muted); font-size: 12px; line-height: 1.7; }
+.ui-wallet-recipient { overflow-wrap: anywhere; }
+.ui-auth-brand-row { display: flex; align-items: center; gap: 22px; min-width: 0; }
+.ui-auth-back { display: inline-flex; align-items: center; gap: 5px; color: var(--vora-muted); font-size: 13px; flex-shrink: 0; }
+@media (max-width: 700px) {
+  .ui-auth-brand-row { gap: 10px; }
+  .ui-auth-brand-row > .brand { display: none; }
+  .ui-auth-back { font-size: 12px; }
+}

@@ -1,0 +1,143 @@
+# 根据用户 2026-09-19 提供的站点配置补充 history 路由回退。
+# 此文件供服务器替换/合并，不是前端静态资源，不放到 user-dist。
+# 先检查宝塔 rewrite/extension 引用是否已有重复 location；保留其实际有效配置。
+server
+{
+    listen 80;
+    listen 443 ssl;
+    listen 443 quic;
+    http2 on;
+    http3 on;
+    server_name winter-mute.net www.winter-mute.net;
+    index index.php index.html index.htm default.php default.htm default.html;
+    root /www/wwwroot/data/user-dist;
+    #CERT-APPLY-CHECK--START
+    # 用于SSL证书申请时的文件验证相关配置 -- 请勿删除
+    include /www/server/panel/vhost/nginx/well-known/winter-mute.net.conf;
+    #CERT-APPLY-CHECK--END
+    include /www/server/panel/vhost/nginx/extension/winter-mute.net/*.conf;
+
+    #SSL-START SSL相关配置，请勿删除或修改下一行带注释的404规则
+    #error_page 404/404.html;
+    #HTTP_TO_HTTPS_START
+    set $isRedcert 1;
+    if ($server_port != 443) {
+        set $isRedcert 2;
+    }
+    if ( $uri ~ /\.well-known/ ) {
+        set $isRedcert 1;
+    }
+    if ($isRedcert != 1) {
+        rewrite ^(/.*)$ https://$host$1 permanent;
+    }
+    #HTTP_TO_HTTPS_END
+    ssl_certificate    /www/server/panel/vhost/cert/winter-mute.net/fullchain.pem;
+    ssl_certificate_key    /www/server/panel/vhost/cert/winter-mute.net/privkey.pem;
+    ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
+    ssl_ciphers EECDH+CHACHA20:EECDH+CHACHA20-draft:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:EECDH+3DES:RSA+3DES:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_tickets on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    add_header Strict-Transport-Security "max-age=31536000";
+    add_header Alt-Svc 'quic=":443"; h3=":443"; h3-29=":443"; h3-27=":443";h3-25=":443"; h3-T050=":443"; h3-Q050=":443";h3-Q049=":443"; h3-Q048=":443"; h3-Q046=":443"; h3-Q043=":443"';
+    quic_retry on;
+    quic_gso on;
+    ssl_early_data on;
+    error_page 497  https://$host$request_uri;
+    #SSL-END
+
+    #ERROR-PAGE-START  错误页配置，可以注释、删除或修改
+    error_page 404 /404.html;
+    #error_page 502 /502.html;
+    #ERROR-PAGE-END
+
+    #PHP-INFO-START  PHP引用配置，可以注释或修改
+    include enable-php-00.conf;
+    #PHP-INFO-END
+
+    #REWRITE-START URL重写规则引用,修改后将导致面板设置的伪静态规则失效
+    include /www/server/panel/vhost/rewrite/winter-mute.net.conf;
+    #REWRITE-END
+
+    # 禁止访问的敏感文件
+    location ~* (\.user.ini|\.htaccess|\.htpasswd|\.env.*|\.project|\.bashrc|\.bash_profile|\.bash_logout|\.DS_Store|\.gitignore|\.gitattributes|LICENSE|README\.md|CLAUDE\.md|CHANGELOG\.md|CHANGELOG|CONTRIBUTING\.md|TODO\.md|FAQ\.md|composer\.json|composer\.lock|package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|\.\w+~|\.swp|\.swo|\.bak(up)?|\.old|\.tmp|\.temp|\.log|\.sql(\.gz)?|docker-compose\.yml|docker\.env|Dockerfile|\.csproj|\.sln|Cargo\.toml|Cargo\.lock|go\.mod|go\.sum|phpunit\.xml|phpunit\.xml|pom\.xml|build\.gradl|pyproject\.toml|requirements\.txt|application(-\w+)?\.(ya?ml|properties))$
+    {
+        return 404;
+    }
+
+    # 禁止访问的敏感目录
+    location ~* /(\.git|\.svn|\.bzr|\.vscode|\.claude|\.idea|\.ssh|\.github|\.npm|\.yarn|\.pnpm|\.cache|\.husky|\.turbo|\.next|\.nuxt|node_modules|runtime)/ {
+        return 404;
+    }
+
+    #一键申请SSL证书验证目录相关设置
+    location ~ \.well-known{
+        allow all;
+    }
+
+    #禁止在证书验证目录放入敏感文件
+    if ( $uri ~ "^/\.well-known/.*\.(php|jsp|py|js|css|lua|ts|go|zip|tar\.gz|rar|7z|sql|bak)$" ) {
+        return 403;
+    }
+
+    # 页面深链接交给 Vue Router；保留地址栏原路径和查询参数。
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 首页入口与离线脚本每次重新验证，避免发布后继续引用旧版本。
+    # expires 会设置缓存头，不覆盖站点已有 HSTS/Alt-Svc 的继承。
+    location = /index.html {
+        try_files $uri =404;
+        expires -1;
+    }
+    location = /sw.js {
+        try_files $uri =404;
+        expires -1;
+    }
+    location = /manifest.webmanifest {
+        default_type application/manifest+json;
+        try_files $uri =404;
+        expires -1;
+    }
+    location = /offline.html {
+        try_files $uri =404;
+        expires -1;
+    }
+
+    # 缺失的构建资源返回 404，不使用页面回退。
+    # 不使用 ^~，以保留上方敏感文件规则对资源目录的保护。
+    location /assets/ {
+        try_files $uri =404;
+    }
+
+    location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
+    {
+        expires      30d;
+        error_log /dev/null;
+        access_log /dev/null;
+    }
+
+    # API（包括支付回调）优先于静态扩展名规则，原 /api 路径完整保留。
+    location ^~ /api/ {
+        proxy_pass http://127.0.0.1:9091/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_intercept_errors off;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    location ~ .*\.(js|css)?$
+    {
+        expires      12h;
+        error_log /dev/null;
+        access_log /dev/null;
+    }
+    access_log  /www/wwwlogs/winter-mute.net.log;
+    error_log  /www/wwwlogs/winter-mute.net.error.log;
+}

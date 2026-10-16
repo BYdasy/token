@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 仅位于测试类路径，不随应用 JAR 发布；真实部署沿用生产日志配置。 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger{40} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 安全边界测试明确断言 401/403，MockMvc 不会访问已启动的业务接口。 -->
+    <logger name="org.token.exception.GlobalExceptionHandler" level="ERROR"/>
+    <!-- MVC 切片中的临时安全密码不用于测试认证，也不需要输出到构建日志。 -->
+    <logger name="org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration" level="ERROR"/>
+    <!-- 以下隔离测试主动制造任务、通知、汇率和内容失败，验证恢复与回退。 -->
+    <logger name="org.token.service.compute.ComputeJobService" level="ERROR"/>
+    <logger name="org.token.service.impl.TelegramPollingScheduler" level="ERROR"/>
+    <logger name="org.token.service.compute.ComputeExchangeRateService" level="ERROR"/>
+    <logger name="org.token.service.compute.ComputeContentTranslationService" level="ERROR"/>
+    <logger name="org.token.service.compute.ComputeContentService" level="ERROR"/>
+
+    <!-- 其他告警与错误继续可见；断言失败和异常仍由 Surefire 完整报告。 -->
+    <root level="WARN">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

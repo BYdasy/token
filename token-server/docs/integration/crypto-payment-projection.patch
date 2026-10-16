@@ -1,0 +1,132 @@
+diff --git a/mcag-core/src/main/java/com/mcag/core/GatewayService.java b/mcag-core/src/main/java/com/mcag/core/GatewayService.java
+--- a/mcag-core/src/main/java/com/mcag/core/GatewayService.java
++++ b/mcag-core/src/main/java/com/mcag/core/GatewayService.java
+@@ -22,7 +22,7 @@
+             case "customer-addresses/get-or-create"->customerAddress(tenant,body);
+             case "payouts/quote"->payouts.quote(tenant,body);
+             case "payouts/create"->payouts.create(tenant,body);
+-            case "payouts/query"->query(tenant,"payouts",body,"payout_id","merchant_order_id","created_at");
++            case "payouts/query"->payoutQuery(tenant,body);
+             case "deposits/query"->query(tenant,"deposits",body,"deposit_id","tx_hash","detected_at");
+             case "deposit-rechecks/create"->recheck(tenant,body);
+             case "deposit-rechecks/query"->query(tenant,"deposit_rechecks",body,"recheck_id","merchant_recheck_id","created_at");
+@@ -54,6 +54,46 @@
+     }
+     private Map<String,Object> assets(Tenant t){
+         return map("items",db.list("SELECT a.asset_id,a.symbol,a.network_id,a.asset_type,a.decimals,(a.deposit_enabled AND p.deposit_enabled AND n.deposit_enabled) AS deposit_enabled,(a.payout_enabled AND p.payout_enabled AND n.payout_enabled AND COALESCE(c.payout_enabled,false) AND c.hot_wallet_id IS NOT NULL AND c.max_network_fee_native>0) AS payout_enabled,COALESCE(p.minimum_deposit_override,a.minimum_deposit) AS minimum_deposit,COALESCE(p.minimum_payout_override,a.minimum_payout) AS minimum_payout,COALESCE(p.maximum_payout_override,a.maximum_payout) AS maximum_payout,a.platform_fee,a.network_fee_charge_cap,a.configuration_version FROM assets a JOIN merchant_asset_policies p ON p.asset_id=a.asset_id JOIN networks n ON n.network_id=a.network_id LEFT JOIN custody_network_policies c ON c.network_id=n.network_id WHERE p.merchant_id=#{p.m} AND p.environment=#{p.e} AND p.visible AND n.enabled ORDER BY a.network_id,a.asset_id",support.tenant(t)));
++    }
++    /** 商户出款查询只投影公开字段；来源钱包取不可变签名交易，不能使用当前热钱包配置。 */
++    private Map<String,Object> payoutQuery(Tenant t,Map<String,Object>b){
++        int limit=CoreSupport.limit(b);var p=support.tenant(t);p.put("limit",limit+1);
++        StringBuilder sql=new StringBuilder("""
++            SELECT p.payout_id,p.merchant_id,p.environment,p.merchant_order_id,p.customer_id,p.quote_id,
++                   p.asset_id,p.network_id,p.amount,p.destination_address,p.destination_memo,p.status,
++                   p.safe_to_release_user_principal,p.resource_version,p.reason_code,
++                   p.created_at,p.updated_at,p.completed_at,
++                   q.platform_fee,q.network_fee_charge_cap,q.max_fee_charge,p.asset_id AS fee_asset_id,
++                   a.symbol,a.decimals,t.tx_hash,w.address AS sender_address,
++                   p.destination_address AS receiver_address,t.status AS chain_status,
++                   t.broadcast_at,t.confirmed_at,o.status AS custody_status,
++                   o.actual_fee_native,n.native_asset_id AS network_fee_asset_id
++              FROM payouts p
++              LEFT JOIN payout_quotes q ON q.quote_id=p.quote_id
++                   AND q.merchant_id=p.merchant_id AND q.environment=p.environment
++                   AND q.asset_id=p.asset_id AND q.network_id=p.network_id
++              LEFT JOIN payout_transactions t ON t.payout_id=p.payout_id
++                   AND t.merchant_id=p.merchant_id AND t.environment=p.environment AND t.network_id=p.network_id
++              LEFT JOIN wallets w ON w.wallet_id=t.wallet_id
++                   AND w.environment=p.environment AND w.network_id=p.network_id
++              LEFT JOIN custody_operations o ON o.payout_id=p.payout_id AND o.operation_type='PAYOUT'
++                   AND o.merchant_id=p.merchant_id AND o.environment=p.environment
++                   AND o.asset_id=p.asset_id AND o.network_id=p.network_id
++              LEFT JOIN assets a ON a.asset_id=p.asset_id AND a.network_id=p.network_id
++              LEFT JOIN networks n ON n.network_id=p.network_id
++             WHERE p.merchant_id=#{p.m} AND p.environment=#{p.e}
++            """);
++        for(String key:List.of("payout_id","merchant_order_id","asset_id","network_id","customer_id")){
++            if(b.get(key)!=null){p.put(key,required(b,key));sql.append(" AND p.").append(key).append("=#{p.").append(key).append("}");}
++        }
++        if(b.get("before_id")!=null){
++            p.put("before",required(b,"before_id"));
++            sql.append(" AND (p.created_at,p.payout_id) < (SELECT cursor.created_at,cursor.payout_id FROM payouts cursor WHERE cursor.payout_id=#{p.before} AND cursor.merchant_id=#{p.m} AND cursor.environment=#{p.e})");
++        }
++        sql.append(" ORDER BY p.created_at DESC,p.payout_id DESC LIMIT #{p.limit}");
++        var rows=db.list(sql.toString(),p);boolean more=rows.size()>limit;if(more)rows=new ArrayList<>(rows.subList(0,limit));
++        // 未签名时链字段为空；当前模型未保存确认数，不用终态、所需确认数或时间推算。
++        return map("items",rows,"has_more",more,"next_cursor",rows.isEmpty()?null:rows.get(rows.size()-1).get("payout_id"));
+     }
+     private Map<String,Object> query(Tenant t,String table,Map<String,Object>b,String primary,String secondary,String time){
+         var p=support.tenant(t);p.put("limit",CoreSupport.limit(b)+1);
+diff --git a/mcag-core/src/test/java/com/mcag/core/FinancialIntegrationTest.java b/mcag-core/src/test/java/com/mcag/core/FinancialIntegrationTest.java
+--- a/mcag-core/src/test/java/com/mcag/core/FinancialIntegrationTest.java
++++ b/mcag-core/src/test/java/com/mcag/core/FinancialIntegrationTest.java
+@@ -167,6 +167,69 @@
+         assertEquals(0,new BigDecimal("0.000123").compareTo(Amounts.value(custody.find(id).get("actual_fee_native"))));
+         assertThrows(Exception.class,()->db.update("UPDATE custody_operations SET signed_payload='changed' WHERE operation_id=#{p.id}",map("id",id)));
+     }
++    /** 全程使用隔离 schema 和签名测试替身，不向任何 RPC 广播。 */
++    @Test void merchantPayoutProjectionKeepsOriginalChainIdentityAndExcludesSecrets(){
++        enableCustody();fund("PAYOUT_PRINCIPAL","100");fund("SERVICE_FEE","10");var op=createPayout("projection");
++        String id=op.get("operation_id").toString(),payoutId=op.get("payout_id").toString();
++        var pending=projectedPayout(payoutId);
++        assertEquals("QUEUED",pending.get("status"));assertNull(pending.get("tx_hash"));assertNull(pending.get("sender_address"));
++        assertEquals("AWAITING_APPROVAL",pending.get("custody_status"));assertFalse((Boolean)pending.get("safe_to_release_user_principal"));
++        custody.approve(id,1,"test-admin");assertNotNull(custody.claimReady(id,"projection-worker"));
++        String hash=UUID.randomUUID().toString().replace("-","").repeat(2);
++        var signed=new CustodyChainService.Prepared(new ChainModels.Signed(hash,"projection-signature-must-stay-private","TRON_PROTOBUF"),null,new BigDecimal("0.5"),Instant.now().plusSeconds(3600),map("private_detail","not-public"));
++        custody.persistPrepared(id,"projection-worker",signed);custody.beginBroadcast(id,"projection-worker");
++        custody.broadcastResult(id,"projection-worker",false,null,"RPC_TIMEOUT");
++        var uncertain=projectedPayout(payoutId);
++        assertEquals("UNKNOWN",uncertain.get("status"));assertEquals("UNKNOWN",uncertain.get("chain_status"));assertEquals(hash,uncertain.get("tx_hash"));
++        assertFalse((Boolean)uncertain.get("safe_to_release_user_principal"));
++        String sender=db.one("SELECT address FROM wallets WHERE wallet_id=#{p.id}",map("id",op.get("source_wallet_id"))).get("address").toString();
++        assertEquals(sender,uncertain.get("sender_address"));assertEquals(TronAddress.fromHex("22".repeat(20)),uncertain.get("receiver_address"));
++        // 重播沿用原签名；返回的 Hash 与发送地址不随操作重试改变。
++        var current=custody.find(id);custody.retry(id,((Number)current.get("version")).longValue(),"test-admin");
++        custody.beginBroadcast(id,"projection-retry");custody.broadcastResult(id,"projection-retry",true,hash,null);
++        assertEquals(hash,projectedPayout(payoutId).get("tx_hash"));assertEquals(sender,projectedPayout(payoutId).get("sender_address"));
++        custody.reconcile(id,new CustodyChainService.Settlement("CONFIRMED",100,true,new BigDecimal("0.000123"),"projection-final-block"));
++        var completed=projectedPayout(payoutId);
++        assertEquals("SUCCEEDED",completed.get("status"));assertEquals("CONFIRMED",completed.get("chain_status"));assertEquals("SUCCEEDED",completed.get("custody_status"));
++        assertEquals("USDT_TRON",completed.get("fee_asset_id"));assertEquals("TRX_TRON",completed.get("network_fee_asset_id"));
++        assertEquals(0,new BigDecimal("3").compareTo(Amounts.value(completed.get("max_fee_charge"))));
++        assertEquals(0,new BigDecimal("0.000123").compareTo(Amounts.value(completed.get("actual_fee_native"))));
++        for(var row:List.of(pending,uncertain,completed)){
++            for(String key:List.of("id","wallet_id","source_wallet_id","signed_payload","signed_format","details","key_ref","key_ciphertext","raw_transaction_ref","request_fingerprint","worker_id","lease_until","principal_account_id","fee_account_id"))assertFalse(row.containsKey(key),key);
++            assertFalse(row.containsKey("current_confirmations"),"确认数没有持久化来源，不能编造");
++        }
++    }
++    @Test void merchantPayoutProjectionPreservesFiltersPaginationAndTenantCursorBinding(){
++        enableCustody();fund("PAYOUT_PRINCIPAL","100");fund("SERVICE_FEE","10");createPayout("projection-first");createPayout("projection-second");
++        var first=gateway.handle(tenant,"payouts/query",map("limit",1));assertEquals(true,first.get("has_more"));
++        String cursor=first.get("next_cursor").toString();
++        var second=gateway.handle(tenant,"payouts/query",map("limit",1,"before_id",cursor));
++        assertEquals(false,second.get("has_more"));assertNotEquals(cursor,second.get("next_cursor"));
++        var firstRow=projectedPayout(cursor);
++        var matching=gateway.handle(tenant,"payouts/query",map("payout_id",cursor,"merchant_order_id",firstRow.get("merchant_order_id"),"asset_id","USDT_TRON","network_id","TRON_MAINNET"));
++        assertEquals(1,((List<?>)matching.get("items")).size());
++        assertTrue(((List<?>)gateway.handle(tenant,"payouts/query",map("payout_id",cursor,"merchant_order_id","different-order")).get("items")).isEmpty());
++        Tenant other=new Tenant(Ids.next("mch"),"LIVE");
++        db.update("INSERT INTO merchants(merchant_id,environment,merchant_name) VALUES(#{p.m},'LIVE','Projection other merchant')",map("m",other.merchantId()));
++        for(var filter:List.of(map("payout_id",cursor),map("merchant_order_id",firstRow.get("merchant_order_id")),map("before_id",cursor)))
++            assertTrue(((List<?>)gateway.handle(other,"payouts/query",filter).get("items")).isEmpty());
++        assertThrows(BusinessException.class,()->gateway.handle(tenant,"payouts/query",map("limit",201)));
++    }
++    @Test void merchantDepositQueryAlreadyIncludesAddressAndConfirmationFacts(){
++        var address=customer("projection-deposit");var transfer=transfer(address,"10");
++        String id=deposits.observe(transfer).get("deposit_id").toString();deposits.confirm(id,20,true);
++        @SuppressWarnings("unchecked") var records=(List<Map<String,Object>>)gateway.handle(tenant,"deposits/query",map("deposit_id",id)).get("items");
++        assertEquals(1,records.size());var row=records.get(0);
++        assertEquals(transfer.get("from_address"),row.get("sender_address"));assertEquals(address.get("address"),row.get("address"));
++        assertEquals("USDT_TRON",row.get("asset_id"));assertEquals("TRON_MAINNET",row.get("network_id"));
++        assertEquals(20,((Number)row.get("current_confirmations")).intValue());assertEquals(true,row.get("finality_satisfied"));
++        assertEquals("CONFIRMED",row.get("chain_status"));assertEquals("POSTED",row.get("ledger_status"));assertEquals("CLEAR",row.get("risk_status"));
++    }
++    @SuppressWarnings("unchecked")
++    private Map<String,Object> projectedPayout(String payoutId){
++        var records=(List<Map<String,Object>>)gateway.handle(tenant,"payouts/query",map("payout_id",payoutId)).get("items");
++        assertEquals(1,records.size());return records.get(0);
++    }
+     @Test void walletHasAtMostOneSigningClaimAcrossConcurrentWorkers() throws Exception {
+         enableCustody();fund("PAYOUT_PRINCIPAL","100");fund("SERVICE_FEE","10");var one=createPayout("first");var two=createPayout("second");
+         String a=one.get("operation_id").toString(),b=two.get("operation_id").toString();custody.approve(a,1,"test-admin");custody.approve(b,1,"test-admin");

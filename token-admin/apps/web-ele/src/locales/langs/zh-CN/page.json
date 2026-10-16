@@ -1,0 +1,9 @@
+{
+  "auth": {
+    "login": "登录"
+  },
+  "dashboard": {
+    "title": "概览",
+    "overview": "首页"
+  }
+}

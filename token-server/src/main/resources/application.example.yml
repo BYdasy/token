@@ -1,0 +1,88 @@
+# 安全配置模板：复制为同目录 application.yml，再在运行环境设置所需变量。
+# 本文件不含实际账号、密码或密钥；实际 application.yml 禁止提交到 Git。
+spring:
+  application:
+    name: token
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:16}
+      minimum-idle: ${DB_POOL_MIN_IDLE:4}
+      connection-timeout: 30000
+      # 所有数据库连接固定使用 UTC，会话内 CURRENT_TIMESTAMP 也统一保存为 UTC。
+      connection-init-sql: SET time_zone = '+00:00'
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DATABASE:0}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:2s}
+      timeout: ${REDIS_TIMEOUT:2s}
+
+server:
+  port: ${SERVER_PORT:9091}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+google:
+  project:
+    id: ${GOOGLE_PROJECT_ID}
+  default:
+    language: en
+  translate:
+    timeout-seconds: 30
+    thread-pool-size: 0
+
+exp:
+  notification:
+    # Telegram getUpdates 使用 1 秒短轮询；默认间隔 1 秒，消息通常 1～2 秒内返回会话 ID。
+    telegram-poll-interval-ms: ${EXP_TELEGRAM_POLL_INTERVAL_MS:1000}
+    # 生产环境建议单独配置；未配置时继续回退 JWT 密钥，兼容已有部署。
+    encryption-key: ${EXP_NOTIFICATION_ENCRYPTION_KEY}
+  cache:
+    # 默认只使用进程内缓存；启用后同时写入 Redis，Redis 故障时自动回退，不影响启动。
+    redis-enabled: ${EXP_REDIS_ENABLED:true}
+    key-prefix: ${EXP_REDIS_KEY_PREFIX:}
+  security:
+    # 仅信任直连反代的转发IP与协议头；同源识别使用保留端口的Host，不信任X-Forwarded-Host。
+    trusted-proxies: ${EXP_TRUSTED_PROXIES:127.0.0.1,::1}
+    # 多域名统一走本站/api，自动识别同源，无需配置域名来源名单；真正跨域调用拒绝。
+  totp:
+    issuer: ${EXP_TOTP_ISSUER:duotaivora}
+    encryption-key: ${EXP_TOTP_ENCRYPTION_KEY}
+  image:
+    # 普通静态图片统一转换为 WebP；GIF 和视频保持原文件。
+    webp-quality: ${EXP_WEBP_QUALITY:80}
+  i18n:
+    # 服务端消息以中文为最终回退语言；请求语言仍必须在后台语言配置中启用。
+    default-language: ${EXP_I18N_DEFAULT_LANGUAGE:zh}
+  jwt:
+    # 必须通过环境变量设置密钥；迁移现有环境时沿用原值，不能随意更换。
+    secret: ${EXP_JWT_SECRET}
+  time-zone: ${EXP_TIME_ZONE:Asia/Shanghai}
+  geoip:
+    city-db-path: ${EXP_GEOIP_CITY_DB_PATH:}
+    city-db-windows-path: ${EXP_GEOIP_WINDOWS_PATH:E:/Java/GeoLite2-City.mmdb}
+    city-db-linux-path: ${EXP_GEOIP_LINUX_PATH:/www/wwwroot/data/GeoLite2-City.mmdb}
+    local-test-ip: ${EXP_LOCAL_TEST_IP:}
+  storage:
+    # EXP_IMAGE_PATH / EXP_FILE_PATH 非空时优先覆盖当前操作系统路径。
+    image-path: ${EXP_IMAGE_PATH:}
+    file-path: ${EXP_FILE_PATH:}
+    # Windows 默认沿用原本地调试目录，也可分别覆盖图片和文件目录。
+    windows-image-path: ${EXP_WINDOWS_IMAGE_PATH:${EXP_WINDOWS_BASE_PATH:C:/token/storage/}}
+    windows-file-path: ${EXP_WINDOWS_FILE_PATH:${EXP_WINDOWS_BASE_PATH:C:/token/storage/}}
+    # Linux 默认沿用原部署目录，避免已有素材路径失效。
+    linux-image-path: ${EXP_LINUX_IMAGE_PATH:/www/wwwroot/data/img/token/}
+    linux-file-path: ${EXP_LINUX_FILE_PATH:/www/wwwroot/data/file/token/}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="duotaivora 用户">
+  <defs><linearGradient id="a" x1="12" y1="8" x2="84" y2="88" gradientUnits="userSpaceOnUse"><stop stop-color="#312e81"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs>
+  <rect width="96" height="96" rx="28" fill="url(#a)"/>
+  <circle cx="48" cy="37" r="15" fill="#c7d2fe"/>
+  <path d="M22 82c2-18 12-27 26-27s24 9 26 27" fill="#e0e7ff"/>
+</svg>

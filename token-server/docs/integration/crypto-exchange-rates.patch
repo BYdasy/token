@@ -1,0 +1,146 @@
+diff --git a/mcag-api/src/main/java/com/mcag/api/MerchantAuthFilter.java b/mcag-api/src/main/java/com/mcag/api/MerchantAuthFilter.java
+--- a/mcag-api/src/main/java/com/mcag/api/MerchantAuthFilter.java
++++ b/mcag-api/src/main/java/com/mcag/api/MerchantAuthFilter.java
+@@ -37,7 +37,7 @@
+             Map.entry("customer-addresses/get-or-create", "addresses:write"), Map.entry("payouts/create", "payouts:create"),
+             Map.entry("payouts/query", "payouts:read"), Map.entry("deposit-rechecks/create", "rechecks:create"),
+             Map.entry("merchant-bills/query", "balances:read"),
+-            Map.entry("assets/query", "assets:read"),
++            Map.entry("assets/query", "assets:read"), Map.entry("exchange-rates/query", "assets:read"),
+             Map.entry("payouts/quote", "payouts:quote"),
+             Map.entry("deposit-rechecks/query", "rechecks:read"), Map.entry("events/query", "events:read"));
+     private final Db db;
+diff --git a/mcag-core/src/main/java/com/mcag/core/GatewayService.java b/mcag-core/src/main/java/com/mcag/core/GatewayService.java
+--- a/mcag-core/src/main/java/com/mcag/core/GatewayService.java
++++ b/mcag-core/src/main/java/com/mcag/core/GatewayService.java
+@@ -22,6 +22,7 @@
+     @org.springframework.beans.factory.annotation.Autowired private MerchantBillService bills;
+     @org.springframework.beans.factory.annotation.Autowired private ValuationService valuation;
+     @org.springframework.beans.factory.annotation.Autowired private PointsQueryService points;
++    @org.springframework.beans.factory.annotation.Autowired private MerchantExchangeRateService exchangeRates;
+     private final CoreSupport support;
+     private final AddressService addresses;
+     private final PayoutService payouts;
+@@ -73,6 +74,7 @@
+             case "deposit-rechecks/query" ->
+                     query(tenant, "deposit_rechecks", body, "recheck_id", "merchant_recheck_id", "created_at");
+             case "assets/query" -> assets(tenant);
++            case "exchange-rates/query" -> exchangeRates.query(tenant,body);
+             case "events/query" -> events(tenant, body);
+             default -> throw new BusinessException("NOT_FOUND", "Unknown merchant operation");
+         };
+diff --git a/mcag-core/src/main/java/com/mcag/core/MerchantExchangeRateService.java b/mcag-core/src/main/java/com/mcag/core/MerchantExchangeRateService.java
+new file mode 100644
+--- /dev/null
++++ b/mcag-core/src/main/java/com/mcag/core/MerchantExchangeRateService.java
+@@ -0,0 +1,64 @@
++package com.mcag.core;
++
++import com.mcag.common.BusinessException;
++import com.mcag.domain.Tenant;
++import com.mcag.infrastructure.Db;
++import org.springframework.stereotype.Service;
++import java.math.BigDecimal;
++import java.time.Instant;
++import java.util.*;
++import static com.mcag.common.Values.map;
++
++/** 商户行情只读投影：复用已成功采集的价格快照，不查链、不调用供应商、不生成新报价。 */
++@Service
++public class MerchantExchangeRateService {
++    private final Db db;
++    public MerchantExchangeRateService(Db db) { this.db=db; }
++
++    public Map<String,Object> query(Tenant tenant,Map<String,Object> body) {
++        if (!body.keySet().equals(Set.of("asset_ids")) || !(body.get("asset_ids") instanceof List<?> requested)
++                || requested.isEmpty() || requested.size()>100)
++            throw new BusinessException("INVALID_ARGUMENT","asset_ids 必须为 1 到 100 个资产编号");
++        Set<String> ids=new LinkedHashSet<>();
++        for(Object value:requested) {
++            if(!(value instanceof String id)||!id.matches("[A-Za-z0-9_.:-]{1,128}")||!ids.add(id))
++                throw new BusinessException("INVALID_ARGUMENT","资产编号格式无效或重复");
++        }
++        var args=map("m",tenant.merchantId(),"e",tenant.environment());
++        List<String> parameters=new ArrayList<>();int index=0;
++        for(String id:ids) {String key="asset"+index++;args.put(key,id);parameters.add("#{p."+key+"}");}
++        var rows=db.list("""
++                SELECT a.asset_id,a.symbol,a.network_id,s.snapshot_id,s.usdt_price,s.source,s.observed_at,s.expires_at
++                  FROM assets a JOIN merchant_asset_policies p ON p.asset_id=a.asset_id
++                  JOIN networks n ON n.network_id=a.network_id
++                  LEFT JOIN service_fee_price_policies f ON f.asset_id=a.asset_id AND f.enabled
++                  LEFT JOIN LATERAL (
++                    SELECT snapshot_id,usdt_price,source,observed_at,expires_at
++                      FROM service_fee_price_snapshots
++                     WHERE asset_id=a.asset_id AND price_policy_version=f.configuration_version
++                       AND source=f.price_source AND source IN ('COINGECKO','USDT_UNIT')
++                     ORDER BY observed_at DESC,created_at DESC LIMIT 1
++                  ) s ON true
++                 WHERE p.merchant_id=#{p.m} AND p.environment=#{p.e} AND p.visible AND n.enabled
++                   AND a.asset_id IN (
++                """+String.join(",",parameters)+") ORDER BY a.asset_id",args);
++        Instant now=Instant.now();
++        var result=new ArrayList<Map<String,Object>>();
++        for(var row:rows) {
++            // 显式白名单，商户无权访问其他商户资产、供应商密钥或内部策略配置。
++            var item=map("asset_id",row.get("asset_id"),"symbol",row.get("symbol"),"network_id",row.get("network_id"));
++            boolean valid=false;
++            if(row.get("snapshot_id")!=null && row.get("usdt_price")!=null && row.get("observed_at")!=null && row.get("expires_at")!=null) {
++                var observed=ServiceFeePricingService.instant(row.get("observed_at"));
++                var expires=ServiceFeePricingService.instant(row.get("expires_at"));
++                var rate=new BigDecimal(row.get("usdt_price").toString());
++                valid=rate.signum()>0&&!observed.isAfter(now)&&!observed.isBefore(now.minusSeconds(600))&&expires.isAfter(now);
++                item.putAll(map("snapshot_id",row.get("snapshot_id"),"usdt_price",rate.toPlainString(),"source",row.get("source"),
++                        "observed_at",observed.toString(),"expires_at",expires.toString()));
++            }
++            item.put("status",valid?"AVAILABLE":row.get("snapshot_id")==null?"MISSING":"STALE");
++            result.add(item);
++        }
++        return map("quote_currency","USDT","items",result,"checked_at",now.toString());
++    }
++}
+diff --git a/mcag-core/src/test/java/com/mcag/core/MerchantExchangeRateServiceTest.java b/mcag-core/src/test/java/com/mcag/core/MerchantExchangeRateServiceTest.java
+new file mode 100644
+--- /dev/null
++++ b/mcag-core/src/test/java/com/mcag/core/MerchantExchangeRateServiceTest.java
+@@ -0,0 +1,41 @@
++package com.mcag.core;
++
++import com.mcag.common.BusinessException;
++import com.mcag.domain.Tenant;
++import com.mcag.infrastructure.Db;
++import org.junit.jupiter.api.Test;
++import java.time.Instant;
++import java.util.*;
++import static com.mcag.common.Values.map;
++import static org.junit.jupiter.api.Assertions.*;
++import static org.mockito.ArgumentMatchers.*;
++import static org.mockito.Mockito.*;
++
++/** 隔离模拟查询，不访问实际数据库、行情服务或资金接口。 */
++class MerchantExchangeRateServiceTest {
++    @Test void queryScopesVisibleAssetsAndProjectsOnlyCachedPublicPrices() {
++        Db db=mock(Db.class);Instant now=Instant.now();
++        when(db.list(anyString(),anyMap())).thenReturn(List.of(map("asset_id","BTC_NATIVE","symbol","BTC","network_id","BITCOIN_MAINNET",
++                "snapshot_id","fx_test","usdt_price","60000","source","COINGECKO","observed_at",now.minusSeconds(30),"expires_at",now.plusSeconds(500),"private_key","禁止回显")));
++        var result=new MerchantExchangeRateService(db).query(new Tenant("merchant_a","LIVE"),Map.of("asset_ids",List.of("BTC_NATIVE")));
++        assertEquals("USDT",result.get("quote_currency"));assertFalse(result.toString().contains("禁止回显"));
++        assertEquals("AVAILABLE",((Map<?,?>)((List<?>)result.get("items")).get(0)).get("status"));
++        verify(db).list(argThat(sql->sql.contains("p.merchant_id=#{p.m}")&&sql.contains("p.environment=#{p.e}")&&sql.contains("p.visible")&&sql.contains("price_policy_version=f.configuration_version")),
++                eq(Map.of("m","merchant_a","e","LIVE","asset0","BTC_NATIVE")));
++        verifyNoMoreInteractions(db);
++    }
++    @Test void staleQuoteIsMarkedWithoutCreatingPriceOrCallingProvider() {
++        Db db=mock(Db.class);Instant old=Instant.now().minusSeconds(1000);
++        when(db.list(anyString(),anyMap())).thenReturn(List.of(map("asset_id","BTC_NATIVE","symbol","BTC","network_id","BITCOIN_MAINNET",
++                "snapshot_id","fx_old","usdt_price","1","source","COINGECKO","observed_at",old,"expires_at",old.plusSeconds(600))));
++        var result=new MerchantExchangeRateService(db).query(new Tenant("m","LIVE"),Map.of("asset_ids",List.of("BTC_NATIVE")));
++        assertEquals("STALE",((Map<?,?>)((List<?>)result.get("items")).get(0)).get("status"));
++        verify(db).list(anyString(),anyMap());verifyNoMoreInteractions(db);
++    }
++    @Test void invalidUnboundedOrDuplicateAssetsAreRejectedBeforeQuery() {
++        Db db=mock(Db.class);var service=new MerchantExchangeRateService(db);var tenant=new Tenant("m","LIVE");
++        for(var body:List.of(Map.of("asset_ids",List.of()),Map.of("asset_ids",List.of("BTC","BTC")),Map.of("asset_ids",List.of("invalid'")),Map.of("asset_ids",Collections.nCopies(101,"BTC"))))
++            assertThrows(BusinessException.class,()->service.query(tenant,new HashMap<>(body)));
++        verifyNoInteractions(db);
++    }
++}

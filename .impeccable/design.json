@@ -1,0 +1,280 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-14T10:16:59Z",
+  "title": "Design System: AI Vora 用户端界面",
+  "extensions": {
+    "colorMeta": {
+      "vora-primary": {
+        "role": "primary",
+        "displayName": "深酒红"
+      },
+      "vora-soft": {
+        "role": "secondary",
+        "displayName": "桃粉"
+      },
+      "vora-soft-surface": {
+        "role": "secondary",
+        "displayName": "浅桃粉"
+      },
+      "vora-bg": {
+        "role": "neutral",
+        "displayName": "奶油杏色"
+      },
+      "vora-surface": {
+        "role": "neutral",
+        "displayName": "暖白色"
+      },
+      "vora-ink": {
+        "role": "neutral",
+        "displayName": "深酒红正文"
+      },
+      "vora-muted": {
+        "role": "neutral",
+        "displayName": "暖灰"
+      },
+      "vora-border": {
+        "role": "neutral",
+        "displayName": "浅暖边"
+      },
+      "vora-success": {
+        "role": "tertiary",
+        "displayName": "柔和绿"
+      },
+      "white": {
+        "role": "neutral",
+        "displayName": "白色"
+      },
+      "field-error-border": {
+        "role": "tertiary",
+        "displayName": "错误边界"
+      },
+      "field-error-text": {
+        "role": "tertiary",
+        "displayName": "错误文字"
+      },
+      "vora-peach": {
+        "role": "secondary",
+        "displayName": "蜜桃橙"
+      },
+      "vora-gradient-middle": {
+        "role": "secondary",
+        "displayName": "渐变中段"
+      },
+      "vora-plum": {
+        "role": "secondary",
+        "displayName": "梅子红"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "场景大标题",
+        "purpose": "首页场景标题，手机24px；其他场景依其组件局部层级。"
+      },
+      "headline": {
+        "displayName": "页面标题",
+        "purpose": "普通业务页面的无衬线一级标题。"
+      },
+      "title": {
+        "displayName": "区块标题",
+        "purpose": "常规内容区域标题；组件局部层级按实际样式保留。"
+      },
+      "brand": {
+        "displayName": "品牌字",
+        "purpose": "后台站点名称；自托管Cormorant Garamond通过Vora Display加载。"
+      },
+      "body": {
+        "displayName": "业务正文",
+        "purpose": "系统中文无衬线正文；段落和富文本分别使用现有行高。"
+      },
+      "label": {
+        "displayName": "紧凑标签",
+        "purpose": "现有状态标签文字。"
+      },
+      "field": {
+        "displayName": "字段内容",
+        "purpose": "手机16px；认证外框同宽、最小高50px，错误信息正常参与布局。"
+      },
+      "button": {
+        "displayName": "按钮文字",
+        "purpose": "普通操作14px，登录与执行主按钮采用更清楚的16至17px文字。"
+      },
+      "amount": {
+        "displayName": "资产总额",
+        "purpose": "配合tabular-nums呈现接口金额，不使用静态示例填充。"
+      }
+    },
+    "shadows": [
+      {
+        "name": "card-default",
+        "value": "0 3px 14px rgb(59 20 43 / 3%)",
+        "purpose": "通用卡片的浅阴影；个人和设置列表局部为none。"
+      },
+      {
+        "name": "authentication-card",
+        "value": "0 14px 40px #3b142b09",
+        "purpose": "位于底部整块背景前的认证表单。"
+      },
+      {
+        "name": "mobile-navigation",
+        "value": "0 -4px 20px rgb(91 48 61 / 4%)",
+        "purpose": "手机固定底栏。"
+      },
+      {
+        "name": "field-focus",
+        "value": "0 0 0 3px rgba(119,62,81,.110)",
+        "purpose": "既有输入焦点环，与新主色边框配合。"
+      }
+    ],
+    "motion": [
+      {
+        "name": "field-state",
+        "value": "border-color .15s ease, box-shadow .15s ease, background-color .15s ease",
+        "purpose": "输入状态反馈。"
+      },
+      {
+        "name": "project-state",
+        "value": "background-color .2s",
+        "purpose": "横向项目卡只改变背景，无旧产品图片放大。"
+      },
+      {
+        "name": "reduced-motion",
+        "value": ".01ms",
+        "purpose": "全局动画与过渡缩短，普通滚动；局部组件可关闭过渡。"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "topbar-compact",
+        "value": "1150px"
+      },
+      {
+        "name": "topbar-two-rows",
+        "value": "900px"
+      },
+      {
+        "name": "mobile-navigation-and-home",
+        "value": "700px"
+      },
+      {
+        "name": "compact-project-and-compute",
+        "value": "640px"
+      },
+      {
+        "name": "compact-authentication",
+        "value": "600px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "主按钮",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "蜜桃橙至梅子红、45%处加深的完全圆角主按钮；预览不提交业务。",
+      "html": "<button type=\"button\" class=\"ds-button-primary\">确认</button>",
+      "css": ".ds-button-primary{height:44px;min-height:44px;padding:0 15px;border:0;border-radius:999px;font-family:'Noto Sans SC','Microsoft YaHei','PingFang SC',system-ui,sans-serif;font-size:14px;font-weight:600;line-height:1.2;cursor:pointer;background:var(--vora-gradient,linear-gradient(105deg,#f0a887 0%,#a65c63 45%,#784352 100%));color:#fff}.ds-button-primary:hover{filter:brightness(1.08)}.ds-button-primary:active{filter:brightness(.94)}.ds-button-primary:focus-visible{outline:3px solid var(--vora-soft, #efc9bb);outline-offset:3px}.ds-button-primary:disabled{opacity:.55;cursor:not-allowed}"
+    },
+    {
+      "name": "描边按钮",
+      "kind": "button",
+      "refersTo": "button-plain",
+      "description": "重试与次级确认使用的 plain 主色按钮，无业务行为。",
+      "html": "<button type=\"button\" class=\"ds-button-plain\">重试</button>",
+      "css": ".ds-button-plain{height:44px;min-height:44px;padding:0 15px;border:1px solid var(--vora-border, #ead9d0);border-radius:12px;font-family:'Noto Sans SC','Microsoft YaHei','PingFang SC',system-ui,sans-serif;font-size:14px;font-weight:600;line-height:1.2;cursor:pointer;background:transparent;color:var(--vora-primary, #3b142b)}.ds-button-plain:hover{filter:brightness(1.08)}.ds-button-plain:active{filter:brightness(.94)}.ds-button-plain:focus-visible{outline:3px solid var(--vora-soft, #efc9bb);outline-offset:3px}.ds-button-plain:disabled{opacity:.55;cursor:not-allowed}"
+    },
+    {
+      "name": "输入字段",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "桌面 15px、手机 16px 的现有输入层级；示例字段不保存数据。",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">用户名</span><input class=\"ds-field-control\" type=\"text\" autocomplete=\"off\" placeholder=\"请输入用户名\"></label>",
+      "css": ".ds-field{display:flex;gap:12px;margin:12px 0;padding:14px 15px;border:1px solid var(--vora-border, #ead9d0);border-radius:12px;background:var(--vora-surface, #fdfaf8);font-family:'Noto Sans SC','Microsoft YaHei','PingFang SC',system-ui,sans-serif;transition:border-color .15s ease,box-shadow .15s ease,background-color .15s ease}.ds-field-label{color:var(--vora-ink, #3b142b);font-size:14px;font-weight:500;line-height:1.55}.ds-field-control{min-width:0;flex:1;min-height:25px;padding:0;border:0;background:transparent;color:var(--vora-primary, #3b142b);font-family:'Noto Sans SC','Microsoft YaHei','PingFang SC',system-ui,sans-serif;font-size:15px;line-height:1.6}.ds-field-control::placeholder{color:var(--vora-muted, #79636d);opacity:1;font-size:14px}.ds-field:focus-within{border-color:var(--vora-primary, #3b142b);background:#fff;box-shadow:0 0 0 3px rgba(119,62,81,.110)}.ds-field-control:focus-visible{outline:2px solid var(--vora-primary, #3b142b);outline-offset:4px}.ds-field-control:disabled{color:var(--vora-muted, #79636d);-webkit-text-fill-color:var(--vora-muted, #79636d);opacity:1;cursor:not-allowed}@media(max-width:700px){.ds-field{padding:13px 12px}.ds-field-control{font-size:16px}}@media(prefers-reduced-motion:reduce){.ds-field{transition-duration:.01ms}}"
+    },
+    {
+      "name": "通用内容卡",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "暖白表面、16px圆角与轻微浅阴影；局部紧凑列表为12px且无阴影。",
+      "html": "<section class=\"ds-card\"><h2 class=\"ds-card-title\">内容区域</h2><p class=\"ds-card-copy\">此处为样式预览，实际内容由接口与翻译提供。</p></section>",
+      "css": ".ds-card{padding:24px;border:0;border-radius:16px;background:var(--vora-surface, #fdfaf8);color:var(--vora-ink, #3b142b);box-shadow:0 3px 14px rgb(59 20 43 / 3%);font-family:'Noto Sans SC','Microsoft YaHei','PingFang SC',system-ui,sans-serif;font-size:14px;line-height:1.55}.ds-card-title{margin:0 0 15px;font-size:19px;line-height:1.5}.ds-card-copy{margin:0;color:var(--vora-muted, #79636d);line-height:1.75}@media(max-width:700px){.ds-card{padding:16px 14px}}"
+    },
+    {
+      "name": "状态标签",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "既有 pill 组件的浅桃粉状态说明，无点击行为。",
+      "html": "<span class=\"ds-chip\">当前</span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;padding:4px 10px;border-radius:6px;background:var(--vora-soft-surface, #f8e5dc);color:var(--vora-primary, #3b142b);font-family:'Noto Sans SC','Microsoft YaHei','PingFang SC',system-ui,sans-serif;font-size:11px;font-weight:500;white-space:nowrap}"
+    },
+    {
+      "name": "桌面五项导航",
+      "kind": "nav",
+      "refersTo": "desktop-navigation",
+      "description": "用户端同奶油杏色的五项导航，无侧栏；PC项间距14px、下划线左右各留6px，701至1350px换第二行，手机沿用同一顺序。顶部用户名及UID均可复制。",
+      "html": "<nav class=\"ds-nav\" aria-label=\"主导航预览\"><a class=\"ds-nav-link ds-nav-current\" href=\"/\" aria-current=\"page\">首页</a><a class=\"ds-nav-link\" href=\"/token\">Token</a><a class=\"ds-nav-link\" href=\"/projects\">项目</a><a class=\"ds-nav-link\" href=\"/wallet\">钱包</a><a class=\"ds-nav-link\" href=\"/profile\">我的</a></nav>",
+      "css": ".ds-nav{display:flex;align-items:stretch;gap:8px;min-height:82px;background:var(--vora-bg, #fdf1e9);font-family:'Noto Sans SC','Microsoft YaHei','PingFang SC',system-ui,sans-serif}.ds-nav-link{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;min-width:80px;padding:12px 16px;color:var(--vora-muted, #79636d);font-size:14px;white-space:nowrap;text-decoration:none}.ds-nav-current{color:var(--vora-primary, #3b142b);font-weight:700}.ds-nav-current::after{position:absolute;content:'';height:3px;border-radius:2px;bottom:0;inset-inline:18px;background:var(--vora-primary, #3b142b)}.ds-nav-link:hover{background:var(--vora-soft-surface, #f8e5dc)}.ds-nav-link:focus-visible{outline:3px solid var(--vora-soft, #efc9bb);outline-offset:3px}@media(max-width:1150px){.ds-nav{gap:0}.ds-nav-link{min-width:64px;padding-inline:12px}}"
+    },
+    {
+      "name": "三钱包资产摘要",
+      "kind": "custom",
+      "refersTo": "asset-summary",
+      "description": "个人中心真实三钱包与可隐藏总展示额；首页独立呈现资产、累计收益和进行项目。",
+      "html": "<section class=\"ds-assets\"><h2 class=\"ds-assets-title\">我的资产</h2><div class=\"ds-assets-total\"><strong>—</strong><span>Token</span></div><div class=\"ds-assets-parts\"><div><small>收益钱包</small><strong>—</strong><span>Token</span></div><div><small>算力钱包</small><strong>—</strong><span>Token</span></div><div><small>项目钱包</small><strong>—</strong><span>Token</span></div></div></section>",
+      "css": ".ds-assets{padding:24px;border:0;border-radius:12px;background:var(--vora-surface, #fdfaf8);color:var(--vora-ink, #3b142b);font-family:'Noto Sans SC','Microsoft YaHei','PingFang SC',system-ui,sans-serif;font-size:14px;line-height:1.55}.ds-assets-title{margin:0;font-size:16px;line-height:1.5}.ds-assets-total{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:16px 0 8px;font-variant-numeric:tabular-nums}.ds-assets-total strong{min-width:0;font-size:clamp(27px,3vw,42px);line-height:1.2;letter-spacing:-1px;overflow-wrap:anywhere}.ds-assets-total span{font-size:13px;color:var(--vora-muted, #79636d)}.ds-assets-parts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:22px;padding-top:18px;border-top:1px solid var(--vora-border, #ead9d0)}.ds-assets-parts>div{min-width:0;text-align:center}.ds-assets-parts small{display:block;color:var(--vora-muted, #79636d);font-size:12px;line-height:1.5}.ds-assets-parts strong{display:block;margin:6px 0;font-size:clamp(16px,2vw,21px);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.ds-assets-parts span{color:var(--vora-muted, #79636d);font-size:11px}@media(max-width:700px){.ds-assets{padding:20px 16px}.ds-assets-title{font-size:14px}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "奶油杏色、深酒红与花瓣品牌的用户端手机及桌面界面",
+    "overview": "以用户 Token_UI.docx 屏幕内布局和当前明确要求分别组织用户端手机与桌面页面。页面与顶部导航统一 #FDF1E9，卡片 #FDFAF8，品牌及文字 #3B142B。主操作使用蜜桃橙 #F0A887 经45%处 #A65C63 到梅子红 #784352 的105度渐变与完全圆角。后台品牌与内容配置保留优先级；管理端独立恢复原Vben主题，不同步用户端配色。",
+    "keyCharacteristics": [
+      "PC无侧栏；顶部与手机底部共用首页、Token、项目、钱包、我的五项导航，701至1350px顶部导航换第二行。",
+      "顶部与页面同色，用户名及UID均可复制；页尾仅平台名称，语言入口为地球图标与完整语言名。",
+      "首页依次为轮播、公告摘要、有效宝箱/转盘图片横幅、五个独立快捷块、资产与累计收益及进行项目、项目；活动无有效图片配置时不造图。PC无轮播时运行数据在场景左侧，有轮播时在首页末尾；手机运行数据始终在底部。",
+      "算力依次为场景、等级与有效期、可用金额及累计收益、收益率与今日收益及次数、星标渐变执行按钮、收益展示；无等级对比。独立等级目录在1024px及以上单行横滚并支持键盘访问。",
+      "认证采用居中品牌、整块底部背景和同宽输入框；PC品牌场景与表单分列。游客顶栏登录最小宽50px，渐变视觉高32px、点击高至少44px，外层透明。",
+      "PC订单取消详情入口并直接保留C/D实际已结算天数；手机保留订单详情事实，删除订单卡内产品跳转。交易记录表头、行内容与展开明细对齐。",
+      "PC居中圆角弹窗沿16px圆角裁切滚动边缘，内部滚动及关闭操作保留。"
+    ],
+    "rules": [
+      {
+        "name": "品牌配置优先",
+        "body": "后台站名、Logo、Icon与轮播配置优先；静态AI Vora素材只作缺省。",
+        "section": "colors"
+      },
+      {
+        "name": "真实资金展示",
+        "body": "金额、收益、次数与订单读取真实API和持久快照；displayAssets只影响总展示额。",
+        "section": "components"
+      },
+      {
+        "name": "认证安全保留",
+        "body": "登录、注册、找回、支付密码、会话与安全回跳规则不因重设计而弱化。",
+        "section": "components"
+      },
+      {
+        "name": "明确的信息顺序",
+        "body": "首页、Token和个人界面遵守当前页面顺序；首页活动横幅放公告下、快捷上，不重新引入旧资产环图、营销侧栏或通用底部功能链接。",
+        "section": "layout"
+      },
+      {
+        "name": "管理端独立主题",
+        "body": "管理端恢复原Vben默认蓝色hsl(212 100% 45%)与radius 0.5，保留已保存偏好。Vben缓存优先且初始化保存完整偏好，无法区分人工选择与旧默认，不自动清理曾保存的梅子色。",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "使用已确认的五个品牌色角色和集中渐变变量。",
+      "使用地球图标和语言名称，不展示语言简码。",
+      "保留后台内容、品牌配置及业务开关。",
+      "让长译文、金额、错误和加载状态正常参与布局。",
+      "保持原支付密码、报价、请求号和结果不明的重试上下文。"
+    ],
+    "donts": [
+      "不恢复Credits旧结构或在PC添加侧栏。",
+      "不在每个页尾添加平台介绍、帮助中心、团队与下载链接。",
+      "不把示意图收益、统计数字、第三方登录或通知开关当作生产功能。",
+      "不让展示赠送、动画或展示收益率参与真实资金计算。",
+      "不以页面美化为由覆盖后台品牌和非空人工译文。"
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+--- a/mcag-core/src/test/java/com/mcag/core/MerchantQueryContractTest.java
++++ b/mcag-core/src/test/java/com/mcag/core/MerchantQueryContractTest.java
+@@ -66,6 +66,7 @@
+         var support = mock(CoreSupport.class);
+         when(support.tenant(any())).thenReturn(map("m", "merchant-1", "e", "LIVE"));
+         when(db.one(startsWith("SELECT family"), anyMap())).thenReturn(map("family", "TRON"));
++        when(db.one(startsWith("SELECT 1 AS registered"), anyMap())).thenReturn(null);
+         var gateway = gateway(db, support, mock(MerchantWalletService.class));
+ 
+         assertThat(gateway.handle(new Tenant("merchant-1", "LIVE"), "customer-addresses/query",

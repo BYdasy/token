@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 110">
+  <defs>
+    <linearGradient id="petal" x2=".25" y2="1"><stop stop-color="#ffc7a5"/><stop offset="1" stop-color="#c46872"/></linearGradient>
+    <linearGradient id="leaf" x2="0" y2="1"><stop stop-color="#ad778a"/><stop offset="1" stop-color="#4b243e"/></linearGradient>
+  </defs>
+  <path fill="url(#petal)" d="M49 103C13 99 4 76 5 40c23 5 41 28 44 63Z"/>
+  <path fill="url(#petal)" d="M49 81C35 41 56 12 87 3c8 28-4 46-22 57-7 4-13 13-16 21Z"/>
+  <path fill="url(#leaf)" d="M52 103c-3-27 11-42 42-57 3 33-11 53-42 57Z"/>
+</svg>

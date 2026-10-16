@@ -1,0 +1,391 @@
+--- a/mcag-api/src/main/java/com/mcag/api/MerchantAuthFilter.java
++++ b/mcag-api/src/main/java/com/mcag/api/MerchantAuthFilter.java
+@@ -34,7 +34,7 @@
+             Map.entry("service-fee/ledger/query", "balances:read"), Map.entry("service-fee/addresses/query", "balances:read"), Map.entry("service-fee/addresses/refresh", "balances:read"),
+             Map.entry("resource-orders/query", "events:read"), Map.entry("notifications/query", "events:read"),
+             Map.entry("notifications/attempts/query", "events:read"),
+-            Map.entry("customer-addresses/get-or-create", "addresses:write"), Map.entry("payouts/create", "payouts:create"),
++            Map.entry("customer-addresses/get-or-create", "addresses:write"), Map.entry("customer-addresses/query", "balances:read"), Map.entry("payouts/create", "payouts:create"),
+             Map.entry("payouts/query", "payouts:read"), Map.entry("deposit-rechecks/create", "rechecks:create"),
+             Map.entry("merchant-bills/query", "balances:read"),
+             Map.entry("assets/query", "assets:read"), Map.entry("exchange-rates/query", "assets:read"),
+--- a/mcag-core/src/main/java/com/mcag/core/DepositOrderService.java
++++ b/mcag-core/src/main/java/com/mcag/core/DepositOrderService.java
+@@ -15,6 +15,16 @@
+ /** A credit belongs to one transfer. Sweeps independently consume confirmed receipts. */
+ @Service
+ public class DepositOrderService {
++    /** 商户查单仅返回核验和展示需要的字段，内部事件仍保留原有详情契约。 */
++    private static final String MERCHANT_COLUMNS = """
++            o.order_id,o.receipt_id,o.merchant_id,o.environment,o.network_id,o.asset_id,
++            o.address,o.customer_id,o.purpose,o.amount,o.credit_threshold,o.policy_version,
++            o.tx_hash,o.transfer_locator,o.block_height,o.block_hash,o.status,o.review_reason,
++            o.resource_version,o.confirmed_at,o.credited_at,o.created_at,o.updated_at,
++            a.symbol,a.decimals,r.address_id,r.sender_address,r.transfer_event_id,r.batch_id,
++            r.accounting_model,r.current_confirmations,r.required_confirmations,r.chain_status,
++            r.finality_satisfied,r.risk_status,r.credit_decision
++            """;
+     private final Db db;
+     private final EventService events;
+     private final ServiceFeeAccountService points;
+@@ -84,7 +94,8 @@
+         return result;
+     }
+     public Map<String,Object> query(Tenant tenant,Map<String,Object> body) {
+-        var p=new LinkedHashMap<>(body);p.put("merchant_id",tenant.merchantId());return read(p,false);
++        var p=new LinkedHashMap<>(body);p.put("merchant_id",tenant.merchantId());
++        p.put("environment",tenant.environment());return read(p,false);
+     }
+     public Map<String,Object> adminQuery(Map<String,Object> body) {return read(body,true);}
+     private Map<String,Object> read(Map<String,Object> body,boolean paged) {
+@@ -92,6 +103,7 @@
+         int limit=paged?MerchantBillService.number(Objects.toString(body.get("page_size"),null),20,100):CoreSupport.limit(body);
+         var p=map("limit",paged?limit:limit+1,"offset",(long)(page-1)*limit);
+         var sql=new StringBuilder(" FROM deposit_orders o JOIN assets a USING(asset_id) JOIN collection_receipts r USING(receipt_id) WHERE o.environment='LIVE'");
++        if(!paged) {p.put("environment",body.get("environment"));sql.append(" AND o.environment=#{p.environment}");}
+         for(String key:List.of("merchant_id","network_id","asset_id","customer_id","purpose","status","order_id"))if(body.get(key)!=null&&!body.get(key).toString().isBlank()) {p.put(key,body.get(key).toString());sql.append(" AND o.").append(key).append("=#{p.").append(key).append("}");}
+         if(body.get("address")!=null&&!body.get("address").toString().isBlank()) {p.put("address",body.get("address").toString());sql.append(" AND (o.address=#{p.address} OR (EXISTS(SELECT 1 FROM networks n WHERE n.network_id=o.network_id AND n.family='EVM') AND lower(o.address)=lower(#{p.address})))");}
+         if(body.get("tx_hash")!=null&&!body.get("tx_hash").toString().isBlank()) {p.put("hash",body.get("tx_hash").toString());sql.append(" AND o.tx_hash=#{p.hash}");}
+@@ -105,6 +117,6 @@
+             return map("items",db.list("SELECT o.*,a.symbol,r.current_confirmations,r.required_confirmations,r.chain_status"+sql+order+" LIMIT #{p.limit} OFFSET #{p.offset}",p),"total",db.one("SELECT count(*) total"+sql,p).get("total"),"page",page,"page_size",limit);
+         }
+         sql.append(" ORDER BY o.credited_at DESC,o.order_id DESC LIMIT #{p.limit}");
+-        var rows=db.list("SELECT o.*,a.symbol,r.current_confirmations,r.required_confirmations,r.chain_status"+sql,p);return map("items",rows.subList(0,Math.min(rows.size(),limit)),"has_more",rows.size()>limit);
++        var rows=db.list("SELECT "+MERCHANT_COLUMNS+sql,p);return map("items",rows.subList(0,Math.min(rows.size(),limit)),"has_more",rows.size()>limit);
+     }
+ }
+--- a/mcag-core/src/main/java/com/mcag/core/GatewayService.java
++++ b/mcag-core/src/main/java/com/mcag/core/GatewayService.java
+@@ -50,8 +50,9 @@
+         for (String forbidden : List.of("merchant_id", "environment", "contract_address", "decimals", "token_standard", "source_wallet", "raw_transaction"))
+             if (body.containsKey(forbidden))
+                 throw new BusinessException("INVALID_ARGUMENT", "Field is platform-controlled: " + forbidden);
+-        return switch (operation) {
++        var result = switch (operation) {
+             case "customer-addresses/get-or-create" -> customerAddress(tenant, body);
++            case "customer-addresses/query" -> registeredAddress(tenant, body);
+             case "deposit-orders/query" -> depositOrders.query(tenant,body);
+             case "collection-batches/query" -> batches.query(tenant, body);
+             case "merchant-wallets/query" -> merchantWallets.wallets(tenant.merchantId(), text(body,"network_id",null));
+@@ -79,6 +80,28 @@
+             case "events/query" -> events(tenant, body);
+             default -> throw new BusinessException("NOT_FOUND", "Unknown merchant operation");
+         };
++        return MerchantQueryView.apply(operation, body, result);
++    }
++
++    /** 仅核对本商户已有收款地址，历史绑定仍保留归属，不泄露用户身份或钱包信息。 */
++    private Map<String,Object> registeredAddress(Tenant tenant, Map<String,Object> body) {
++        for (String field : body.keySet())
++            if (!Set.of("network_id", "address").contains(field))
++                throw new BusinessException("INVALID_ARGUMENT", "地址查询参数无效");
++        String network = required(body, "network_id"), address = required(body, "address").trim();
++        if (network.length() > 80 || address.isBlank() || address.length() > 256)
++            throw new BusinessException("INVALID_ARGUMENT", "地址查询参数无效");
++        var params = support.tenant(tenant);
++        params.put("network", network);params.put("address", address);
++        var chain = db.one("SELECT family FROM networks WHERE network_id=#{p.network}", params);
++        if (chain == null) throw new BusinessException("NOT_FOUND", "网络不存在");
++        boolean sharedEvm = "EVM".equals(chain.get("family"))
++                && Set.of("ETHEREUM_MAINNET", "BSC_MAINNET", "POLYGON_MAINNET").contains(network);
++        String addressMatch = sharedEvm
++                ? "b.network_id IN ('ETHEREUM_MAINNET','BSC_MAINNET','POLYGON_MAINNET') AND lower(b.address)=lower(#{p.address})"
++                : "b.network_id=#{p.network} AND b.address=#{p.address}";
++        var binding = db.one("SELECT 1 AS registered FROM address_bindings b WHERE b.merchant_id=#{p.m} AND b.environment=#{p.e} AND b.purpose IN ('CUSTOMER_DEPOSIT','SERVICE_FEE','PAYOUT_PRINCIPAL') AND " + addressMatch + " LIMIT 1", params);
++        return map("registered", binding != null);
+     }
+ 
+     private Map<String,Object> merchantBills(Tenant tenant,Map<String,Object> body) {
+@@ -130,6 +153,9 @@
+     private Map<String, Object> assets(Tenant t) {
+         var rows = db.list("""
+                 SELECT a.asset_id,a.symbol,a.network_id,a.asset_type,a.decimals,
++                       a.contract_address,a.token_standard,n.display_name AS network_name,n.family,n.chain_id,
++                       n.native_asset_id,na.symbol AS native_symbol,na.decimals AS native_decimals,
++                       n.finality_type,n.required_confirmations,n.configuration_version AS network_configuration_version,
+                        (a.deposit_enabled AND p.deposit_enabled AND n.deposit_enabled) AS deposit_enabled,
+                        (a.payout_enabled AND p.payout_enabled AND n.payout_enabled) AS payout_enabled,
+                        COALESCE(d.credit_threshold,a.minimum_deposit) AS minimum_deposit,
+@@ -150,6 +176,7 @@
+                   FROM assets a JOIN merchant_asset_policies p ON p.asset_id=a.asset_id
+                   JOIN merchants m ON m.merchant_id=p.merchant_id AND m.environment=p.environment
+                   JOIN networks n ON n.network_id=a.network_id
++                  LEFT JOIN assets na ON na.asset_id=n.native_asset_id AND na.network_id=n.network_id
+                   LEFT JOIN collection_asset_defaults d ON d.asset_id=a.asset_id
+                   LEFT JOIN custody_network_policies c ON c.network_id=n.network_id
+                   LEFT JOIN merchant_network_settings s ON s.merchant_id=p.merchant_id AND s.environment=p.environment AND s.network_id=a.network_id
+--- /dev/null
++++ b/mcag-core/src/main/java/com/mcag/core/MerchantQueryView.java
+@@ -0,0 +1,66 @@
++package com.mcag.core;
++
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++
++/** 商户首页的可选白名单视图，不改变默认查询、余额计算或刷新语义。 */
++final class MerchantQueryView {
++    private static final List<String> ADDRESS_FIELDS = List.of(
++            "merchant_id", "environment", "purpose", "address_id", "group_id", "evm_group_id",
++            "wallet_id", "source_wallet_id", "network_id", "address", "collection_address",
++            "label", "wallet_type", "enabled", "status", "monitoring_ready", "initialization_status",
++            "is_primary", "historical_address");
++    private static final List<String> BALANCE_FIELDS = List.of(
++            "asset_id", "symbol", "balance", "confirmed_balance", "balance_status");
++
++    private MerchantQueryView() { }
++
++    static Map<String, Object> apply(String operation, Map<String, Object> request, Map<String, Object> response) {
++        if (!"summary".equals(request.get("view"))) return response;
++        return switch (operation) {
++            case "merchant-wallets/query", "collection-destinations/query" -> rows(response, true);
++            case "merchant-wallets/refresh", "collection-destinations/refresh" -> address(response, true);
++            case "service-fee/addresses/query" -> rows(response, false);
++            case "service-fee/addresses/refresh" -> address(response, false);
++            case "service-fee/account/query" -> pick(response, List.of("available", "reserved", "unit"));
++            default -> response;
++        };
++    }
++
++    private static Map<String, Object> rows(Map<String, Object> response, boolean balances) {
++        var result = new LinkedHashMap<String, Object>();
++        var items = new ArrayList<Map<String, Object>>();
++        if (response.get("items") instanceof List<?> rows)
++            for (Object row : rows) if (row instanceof Map<?, ?> values) items.add(address(values, balances));
++        result.put("items", items);
++        return result;
++    }
++
++    private static Map<String, Object> address(Map<?, ?> source, boolean balances) {
++        var result = pick(source, ADDRESS_FIELDS);
++        if (source.get("networks") instanceof List<?> networks) {
++            var items = new ArrayList<Map<String, Object>>();
++            for (Object network : networks)
++                if (network instanceof Map<?, ?> values) items.add(address(values, balances));
++            result.put("networks", items);
++        }
++        if (balances) {
++            for (String key : List.of("balance_items", "items")) {
++                if (!(source.get(key) instanceof List<?> entries)) continue;
++                var items = new ArrayList<Map<String, Object>>();
++                for (Object entry : entries)
++                    if (entry instanceof Map<?, ?> values) items.add(pick(values, BALANCE_FIELDS));
++                result.put(key, items);
++            }
++        }
++        return result;
++    }
++
++    private static Map<String, Object> pick(Map<?, ?> source, List<String> fields) {
++        var result = new LinkedHashMap<String, Object>();
++        for (String field : fields) if (source.containsKey(field)) result.put(field, source.get(field));
++        return result;
++    }
++}
+--- a/mcag-core/src/main/java/com/mcag/core/PointsQueryService.java
++++ b/mcag-core/src/main/java/com/mcag/core/PointsQueryService.java
+@@ -79,9 +79,9 @@
+     }
+ 
+     public Map<String,Object> balance(Tenant tenant,String addressId) {
+-        var row=db.one("SELECT wallet_id FROM address_bindings WHERE merchant_id=#{p.m} AND environment=#{p.e} AND address_id=#{p.id} AND purpose='SERVICE_FEE'",map("m",tenant.merchantId(),"e",tenant.environment(),"id",addressId));
++        var row=db.one("SELECT address_id,merchant_id,environment,network_id,purpose,address,wallet_id,status,monitoring_ready FROM address_bindings WHERE merchant_id=#{p.m} AND environment=#{p.e} AND address_id=#{p.id} AND purpose='SERVICE_FEE'",map("m",tenant.merchantId(),"e",tenant.environment(),"id",addressId));
+         if(row==null) throw new BusinessException("NOT_FOUND","积分充值地址不存在");
+         var result=new LinkedHashMap<>(balances.wallet(row.get("wallet_id").toString(),false));
+-        result.remove("wallet_id");result.put("address_id",addressId);return result;
++        result.putAll(row);result.remove("wallet_id");return result;
+     }
+ }
+--- /dev/null
++++ b/mcag-core/src/test/java/com/mcag/core/MerchantQueryContractTest.java
+@@ -0,0 +1,119 @@
++package com.mcag.core;
++
++import com.mcag.domain.Tenant;
++import com.mcag.infrastructure.Db;
++import org.junit.jupiter.api.Test;
++import org.mockito.ArgumentCaptor;
++
++import java.math.BigDecimal;
++import java.util.List;
++import java.util.Map;
++
++import static com.mcag.common.Values.map;
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.mockito.ArgumentMatchers.*;
++import static org.mockito.Mockito.*;
++
++/** 查询契约验证全部使用替身，不访问数据库、节点或支付系统。 */
++class MerchantQueryContractTest {
++    @Test void depositQueryProjectsRealReceiptFieldsAndPreservesTenantAndCursor() {
++        var db = mock(Db.class);
++        var events = mock(EventService.class);
++        var points = mock(ServiceFeeAccountService.class);
++        var service = new DepositOrderService(db, events, points);
++        when(db.list(anyString(), anyMap())).thenReturn(List.of(map("order_id", "order-2"), map("order_id", "order-1")));
++
++        var result = service.query(new Tenant("merchant-1", "LIVE"), map("merchant_id", "foreign",
++                "environment", "SIM", "before_id", "order-3", "limit", 1));
++        var sql = ArgumentCaptor.forClass(String.class);
++        @SuppressWarnings("unchecked") var params = ArgumentCaptor.forClass(Map.class);
++        verify(db).list(sql.capture(), params.capture());
++
++        assertThat(sql.getValue()).contains("r.address_id", "r.sender_address", "r.transfer_event_id",
++                "r.accounting_model", "r.batch_id", "a.decimals", "r.finality_satisfied", "r.risk_status",
++                "o.environment=#{p.environment}", "o.merchant_id=#{p.merchant_id}", "order_id=#{p.before}")
++                .doesNotContain("SELECT o.*", "o.wallet_id");
++        assertThat(params.getValue()).containsEntry("merchant_id", "merchant-1")
++                .containsEntry("environment", "LIVE").containsEntry("before", "order-3");
++        assertThat(result).containsEntry("has_more", true).doesNotContainKey("next_cursor");
++        assertThat((List<?>) result.get("items")).hasSize(1);
++        verifyNoMoreInteractions(db);
++        verifyNoInteractions(events, points);
++    }
++
++    @Test void addressOwnershipCheckIsTenantScopedAcrossEvmChainsAndIncludesHistoricalBindings() {
++        var db = mock(Db.class);
++        var support = mock(CoreSupport.class);
++        when(support.tenant(any())).thenReturn(map("m", "merchant-1", "e", "LIVE"));
++        when(db.one(startsWith("SELECT family"), anyMap())).thenReturn(map("family", "EVM"));
++        when(db.one(startsWith("SELECT 1 AS registered"), anyMap())).thenReturn(map("registered", 1));
++        var gateway = gateway(db, support, mock(MerchantWalletService.class));
++
++        assertThat(gateway.handle(new Tenant("merchant-1", "LIVE"), "customer-addresses/query",
++                map("network_id", "POLYGON_MAINNET", "address", "0xAbC"))).containsOnlyKeys("registered")
++                .containsEntry("registered", true);
++        verify(db).one(argThat(sql -> sql.startsWith("SELECT 1 AS registered")
++                && sql.contains("b.merchant_id=#{p.m} AND b.environment=#{p.e}")
++                && sql.contains("'CUSTOMER_DEPOSIT','SERVICE_FEE','PAYOUT_PRINCIPAL'")
++                && sql.contains("'ETHEREUM_MAINNET','BSC_MAINNET','POLYGON_MAINNET'")
++                && sql.contains("lower(b.address)=lower(#{p.address})") && !sql.contains("b.status")),
++                argThat(p -> "merchant-1".equals(p.get("m")) && "LIVE".equals(p.get("e"))));
++        verify(db, never()).update(anyString(), anyMap());
++    }
++
++    @Test void nonEvmOwnershipCheckUsesExactNetworkAndAddressAndCanReturnFalse() {
++        var db = mock(Db.class);
++        var support = mock(CoreSupport.class);
++        when(support.tenant(any())).thenReturn(map("m", "merchant-1", "e", "LIVE"));
++        when(db.one(startsWith("SELECT family"), anyMap())).thenReturn(map("family", "TRON"));
++        when(db.one(startsWith("SELECT 1 AS registered"), anyMap())).thenReturn(null);
++        var gateway = gateway(db, support, mock(MerchantWalletService.class));
++
++        assertThat(gateway.handle(new Tenant("merchant-1", "LIVE"), "customer-addresses/query",
++                map("network_id", "TRON_MAINNET", "address", "TAbC"))).containsEntry("registered", false);
++        verify(db).one(argThat(sql -> sql.startsWith("SELECT 1 AS registered")
++                && sql.contains("b.network_id=#{p.network} AND b.address=#{p.address}") && !sql.contains("lower(")), anyMap());
++        verify(db, never()).update(anyString(), anyMap());
++    }
++
++    @Test void refreshSummaryStillDelegatesOnlyToExistingTrackedBalanceQuery() {
++        var db = mock(Db.class);
++        var wallets = mock(MerchantWalletService.class);
++        when(wallets.refreshBalances("merchant-1", "wallet-1")).thenReturn(map("wallet_id", "wallet-1",
++                "network_id", "TRON_MAINNET", "items", List.of(map("asset_id", "TRX_TRON",
++                        "balance", BigDecimal.TEN, "balance_status", "TRACKING", "scan_height", 42L)), "scan_height", 42L));
++        var result = gateway(db, mock(CoreSupport.class), wallets).handle(new Tenant("merchant-1", "LIVE"),
++                "merchant-wallets/refresh", map("wallet_id", "wallet-1", "view", "summary"));
++        assertThat(result).containsEntry("wallet_id", "wallet-1").doesNotContainKey("scan_height");
++        verify(wallets).refreshBalances("merchant-1", "wallet-1");
++        verifyNoMoreInteractions(wallets);
++        verifyNoInteractions(db);
++    }
++
++    @Test void assetMetadataQueryUsesOnlyExistingPublicColumnsAndMerchantVisibility() throws Exception {
++        var db = mock(Db.class);
++        var support = mock(CoreSupport.class);
++        when(support.tenant(any())).thenReturn(map("m", "merchant-1", "e", "LIVE"));
++        when(db.list(anyString(), anyMap())).thenReturn(List.of(map("asset_id", "USDC_BSC",
++                "decimals", 18, "network_name", "BNB Smart Chain", "family", "EVM", "native_asset_id", "BNB_BSC")));
++        var gateway = gateway(db, support, mock(MerchantWalletService.class));
++        var valuation = mock(ValuationService.class);
++        when(valuation.limits()).thenReturn(Map.of());
++        var field = GatewayService.class.getDeclaredField("valuation");
++        field.setAccessible(true);field.set(gateway, valuation);
++
++        gateway.handle(new Tenant("merchant-1", "LIVE"), "assets/query", Map.of());
++        verify(db).list(argThat(sql -> sql.contains("a.contract_address,a.token_standard")
++                && sql.contains("n.display_name AS network_name,n.family,n.chain_id")
++                && sql.contains("n.native_asset_id,na.symbol AS native_symbol,na.decimals AS native_decimals")
++                && sql.contains("p.merchant_id=#{p.m} AND p.environment=#{p.e} AND p.visible AND n.enabled")
++                && !sql.contains("rpc_endpoints") && !sql.contains("key_ref")), anyMap());
++        verify(db, never()).update(anyString(), anyMap());
++    }
++
++    private static GatewayService gateway(Db db, CoreSupport support, MerchantWalletService wallets) {
++        return new GatewayService(db, support, mock(AddressService.class), mock(PayoutService.class),
++                mock(CollectionBatchService.class), mock(CollectionPolicyService.class), wallets,
++                mock(ServiceFeeAccountService.class), mock(EnergyResourceService.class), mock(MerchantNotificationService.class));
++    }
++}
+--- /dev/null
++++ b/mcag-core/src/test/java/com/mcag/core/MerchantQueryViewTest.java
+@@ -0,0 +1,67 @@
++package com.mcag.core;
++
++import org.junit.jupiter.api.Test;
++
++import java.math.BigDecimal;
++import java.util.List;
++import java.util.Map;
++
++import static com.mcag.common.Values.map;
++import static org.assertj.core.api.Assertions.assertThat;
++
++/** 首页摘要只收缩返回数据，不改变原结果、未知余额或逐链状态。 */
++class MerchantQueryViewTest {
++    @Test void groupedWalletSummaryKeepsChainIdentityAndUnknownBalanceButHidesInternalFields() {
++        var balance = map("asset_id", "USDC_BSC", "symbol", "USDC", "balance", null,
++                "confirmed_balance", null, "balance_status", "INITIALIZING", "scan_height", 123L,
++                "checked_at", "2026-09-20T00:00:00Z", "review_id", "check-1");
++        var network = map("wallet_id", "wallet-bsc", "network_id", "BSC_MAINNET", "address", "0x123",
++                "status", "INITIALIZING", "monitoring_ready", false, "initialization_status", "PENDING",
++                "next_attempt_at", "later", "initialization_error", "internal-error", "balance_items", List.of(balance));
++        var wallet = map("group_id", "group-1", "wallet_id", "wallet-eth", "source_wallet_id", "wallet-eth",
++                "network_id", "EVM", "address", "0x123", "networks", List.of(network),
++                "key_ref", "must-not-return", "pool_last_used_at", "earlier");
++        var original = map("items", List.of(wallet), "scan_height", 123L);
++
++        var summary = MerchantQueryView.apply("merchant-wallets/query", map("view", "summary"), original);
++        var projected = item(summary, "items");
++        var chain = item(projected, "networks");
++        var asset = item(chain, "balance_items");
++
++        assertThat(projected).containsEntry("group_id", "group-1").containsEntry("wallet_id", "wallet-eth")
++                .doesNotContainKeys("key_ref", "pool_last_used_at");
++        assertThat(chain).containsEntry("wallet_id", "wallet-bsc").containsEntry("monitoring_ready", false)
++                .doesNotContainKeys("next_attempt_at", "initialization_error");
++        assertThat(asset).containsEntry("balance", null).containsEntry("balance_status", "INITIALIZING")
++                .doesNotContainKeys("scan_height", "checked_at", "review_id");
++        assertThat(wallet).containsKey("key_ref");
++        assertThat(network).containsKey("initialization_error");
++    }
++
++    @Test void pointsSummaryNeverIncludesCoinBalancesOrAccountPolicies() {
++        var row = map("address_id", "address-1", "group_id", "group-1", "network_id", "BSC_MAINNET",
++                "address", "0x123", "status", "ACTIVE", "monitoring_ready", true,
++                "balance_items", List.of(map("balance", BigDecimal.TEN)), "scan_height", 123L);
++        var summary = MerchantQueryView.apply("service-fee/addresses/query", map("view", "summary"), map("items", List.of(row)));
++        assertThat(item(summary, "items")).containsEntry("address_id", "address-1")
++                .doesNotContainKeys("balance_items", "scan_height");
++        row.put("items", List.of(map("balance", BigDecimal.TEN)));
++        assertThat(MerchantQueryView.apply("service-fee/addresses/refresh", map("view", "summary"), row))
++                .containsEntry("status", "ACTIVE").doesNotContainKeys("items", "balance_items", "scan_height");
++        assertThat(MerchantQueryView.apply("service-fee/account/query", map("view", "summary"),
++                map("available", "20.5", "reserved", "1", "unit", "USDT_POINT", "policy", map("internal", true))))
++                .containsOnlyKeys("available", "reserved", "unit");
++    }
++
++    @Test void normalQueriesAndBusinessResponsesRemainUntouched() {
++        var response = map("items", List.of(map("scan_height", 123L)));
++        assertThat(MerchantQueryView.apply("merchant-wallets/query", Map.of(), response)).isSameAs(response);
++        assertThat(MerchantQueryView.apply("payouts/query", map("view", "summary"), response)).isSameAs(response);
++        assertThat(MerchantQueryView.apply("deposit-orders/query", map("view", "summary"), response)).isSameAs(response);
++    }
++
++    @SuppressWarnings("unchecked")
++    private static Map<String, Object> item(Map<String, Object> source, String key) {
++        return (Map<String, Object>) ((List<?>) source.get(key)).get(0);
++    }
++}

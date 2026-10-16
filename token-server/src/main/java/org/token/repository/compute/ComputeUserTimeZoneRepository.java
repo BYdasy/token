@@ -1,0 +1,27 @@
+package org.token.repository.compute;
+
+import java.util.*;
+import java.math.*;
+import java.time.*;
+import org.token.repository.support.RepositoryResults;
+import org.token.repository.support.AnnotationMapperFactory;
+import org.token.repository.dao.compute.ComputeUserTimeZoneMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Repository;
+
+/** ComputeUserTimeZoneService 的数据读取与写入；事务由完整业务流程管理。 */
+@Repository
+public class ComputeUserTimeZoneRepository {
+    private final ComputeUserTimeZoneMapper mapper;
+
+    @Autowired
+    public ComputeUserTimeZoneRepository(ComputeUserTimeZoneMapper mapper) { this.mapper = mapper; }
+
+    public ComputeUserTimeZoneRepository(ComputeData data) {
+        this(data.mapper(ComputeUserTimeZoneMapper.class));
+    }
+
+    public int saveMemberWrite(Object... args) {
+        return mapper.saveMemberWrite(args);
+    }
+}

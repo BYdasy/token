@@ -1,0 +1,95 @@
+diff --git a/es/components/table/src/table/style-helper.mjs b/es/components/table/src/table/style-helper.mjs
+index a13141f34ba441b977f44503cc4b32eff16696a7..a9db89410a87994f4bd843f81869416ee88ab043 100644
+--- a/es/components/table/src/table/style-helper.mjs
++++ b/es/components/table/src/table/style-helper.mjs
+@@ -1,8 +1,15 @@
+ import { useFormSize } from "../../../form/src/hooks/use-form-common-props.mjs";
+ import { useEventListener, useResizeObserver } from "@vueuse/core";
+-import { computed, nextTick, onMounted, ref, unref, watch, watchEffect } from "vue";
++import { computed, effectScope, nextTick, onBeforeUnmount, onMounted, ref, unref, watch, watchEffect } from "vue";
+ //#region ../../packages/components/table/src/table/style-helper.ts
+ function useStyle(props, layout, store, table) {
++	// 异步挂载后注册的监听必须绑定到可明确释放的作用域。
++	const eventScope = effectScope(true);
++	let disposed = false;
++	onBeforeUnmount(() => {
++		disposed = true;
++		eventScope.stop();
++	});
+ 	const isHidden = ref(false);
+ 	const renderExpanded = ref(null);
+ 	const resizeProxyVisible = ref(false);
+@@ -59,6 +66,7 @@ function useStyle(props, layout, store, table) {
+ 		return { width: layout.bodyWidth.value ? `${layout.bodyWidth.value}px` : "" };
+ 	});
+ 	const doLayout = () => {
++		if (disposed) return;
+ 		if (shouldUpdateHeight.value) layout.updateElsHeight();
+ 		layout.updateColumnsWidth();
+ 		if (typeof window === "undefined") return;
+@@ -66,8 +74,9 @@ function useStyle(props, layout, store, table) {
+ 	};
+ 	onMounted(async () => {
+ 		await nextTick();
++		if (disposed) return;
+ 		store.updateColumns();
+-		bindEvents();
++		eventScope.run(bindEvents);
+ 		requestAnimationFrame(doLayout);
+ 		const el = table.vnode.el;
+ 		const tableHeader = table.refs.headerWrapper;
+@@ -129,7 +138,7 @@ function useStyle(props, layout, store, table) {
+ 	};
+ 	const resizeListener = () => {
+ 		const el = table.vnode.el;
+-		if (!table.$ready || !el) return;
++		if (disposed || !table.$ready || !el) return;
+ 		let shouldUpdateLayout = false;
+ 		const { width: oldWidth, height: oldHeight, headerHeight: oldHeaderHeight } = resizeState.value;
+ 		const width = tableWidth.value = el.offsetWidth;
+diff --git a/lib/components/table/src/table/style-helper.js b/lib/components/table/src/table/style-helper.js
+index 15a3b4a46a9b23a3d562554cfd99f189d1c0148c..50646097b65b44f84dba705e71d079bd66411b57 100644
+--- a/lib/components/table/src/table/style-helper.js
++++ b/lib/components/table/src/table/style-helper.js
+@@ -8,6 +8,13 @@ let _vueuse_core = require("@vueuse/core");
+ let vue = require("vue");
+ //#region ../../packages/components/table/src/table/style-helper.ts
+ function useStyle(props, layout, store, table) {
++	// 异步挂载后注册的监听必须绑定到可明确释放的作用域。
++	const eventScope = (0, vue.effectScope)(true);
++	let disposed = false;
++	(0, vue.onBeforeUnmount)(() => {
++		disposed = true;
++		eventScope.stop();
++	});
+ 	const isHidden = (0, vue.ref)(false);
+ 	const renderExpanded = (0, vue.ref)(null);
+ 	const resizeProxyVisible = (0, vue.ref)(false);
+@@ -64,6 +71,7 @@ function useStyle(props, layout, store, table) {
+ 		return { width: layout.bodyWidth.value ? `${layout.bodyWidth.value}px` : "" };
+ 	});
+ 	const doLayout = () => {
++		if (disposed) return;
+ 		if (shouldUpdateHeight.value) layout.updateElsHeight();
+ 		layout.updateColumnsWidth();
+ 		if (typeof window === "undefined") return;
+@@ -71,8 +79,9 @@ function useStyle(props, layout, store, table) {
+ 	};
+ 	(0, vue.onMounted)(async () => {
+ 		await (0, vue.nextTick)();
++		if (disposed) return;
+ 		store.updateColumns();
+-		bindEvents();
++		eventScope.run(bindEvents);
+ 		requestAnimationFrame(doLayout);
+ 		const el = table.vnode.el;
+ 		const tableHeader = table.refs.headerWrapper;
+@@ -134,7 +143,7 @@ function useStyle(props, layout, store, table) {
+ 	};
+ 	const resizeListener = () => {
+ 		const el = table.vnode.el;
+-		if (!table.$ready || !el) return;
++		if (disposed || !table.$ready || !el) return;
+ 		let shouldUpdateLayout = false;
+ 		const { width: oldWidth, height: oldHeight, headerHeight: oldHeaderHeight } = resizeState.value;
+ 		const width = tableWidth.value = el.offsetWidth;

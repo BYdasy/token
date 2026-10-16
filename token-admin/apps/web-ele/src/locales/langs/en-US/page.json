@@ -1,0 +1,9 @@
+{
+  "auth": {
+    "login": "Login"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "overview": "Overview"
+  }
+}

@@ -1,0 +1,8 @@
+.task-prompt-dialog { width: min(92vw, 560px); }
+.task-prompt-dialog .van-dialog__header { text-align: start; line-height: 1.45; }
+.task-prompt-dialog .van-dialog__message { padding: 18px 24px 16px; }
+.task-prompt-body { display: grid; gap: 16px; }
+.task-prompt-content { max-height: min(45dvh, 380px); overflow-y: auto; overflow-wrap: anywhere; color: var(--van-text-color); }
+.task-prompt-link { justify-self: start; color: var(--van-primary-color); font-weight: 600; }
+.task-prompt-dialog .van-dialog__footer { display: flex; gap: 12px; padding: 8px 24px 24px; }
+.task-prompt-dialog .van-dialog__footer .van-button { min-height: 44px; border-radius: 12px; font-weight: 600; }

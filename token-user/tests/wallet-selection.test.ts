@@ -1,0 +1,42 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createApp, defineComponent, h, nextTick, reactive, ref } from 'vue';
+const state = vi.hoisted(() => ({ options: vi.fn(), quote: vi.fn() }));
+vi.mock('@/api', () => ({ api: { transfer: vi.fn() }, ApiError: class extends Error {}, requestId: () => crypto.randomUUID() }));
+vi.mock('@/api/transfers', () => ({ fetchTransferOptions: state.options, fetchTransferQuote: state.quote }));
+vi.mock('@/stores/session', () => ({ useSession: () => ({ token: 'fixture-member', member: { hasPayPassword: true } }) }));
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key, locale: ref('zh') }) }));
+vi.mock('@/composables/useToken', () => ({ useToken: () => ({ unitName: ref('token') }) }));
+vi.mock('@/composables/useTask', () => ({ useTask: () => ({ loading: ref(false), error: ref(''), run: async (action: () => Promise<unknown>) => action() }) }));
+vi.mock('@/utils/format', () => ({ money: String, positiveAmount: (value: unknown) => Number(value) > 0, validPassword: () => false }));
+vi.mock('vant', () => ({ showSuccessToast: vi.fn() }));
+vi.mock('@/components/wallet/PaymentPasswordField.vue', () => ({ default: { render: () => null } }));
+import TransferPanel from '../src/components/wallet/TransferPanel.vue';
+const apps: ReturnType<typeof createApp>[] = [];
+async function settle() { for (let i=0;i<6;i++) { await nextTick(); await Promise.resolve(); } }
+afterEach(() => { apps.splice(0).forEach(app => app.unmount()); document.body.innerHTML = ''; });
+describe('划转钱包就地选择与真实余额', () => {
+  it('所选双方和展开选项都展示各自可用余额，打开时请求刷新，余额响应更新后同步显示', async () => {
+    state.options.mockResolvedValue({ currency: 'USDT', assetRate: '1', directions: [{ fromWallet: 'COMPUTE', toWallet: 'PROJECT' }, { fromWallet: 'EARNINGS', toWallet: 'PROJECT' }] });
+    const changed = vi.fn();
+    const props = reactive({ wallets: [{ type: 'COMPUTE', currency: 'USDT', available: '10', frozen: '999' }, { type: 'PROJECT', currency: 'USDT', available: '20' }, { type: 'EARNINGS', currency: 'USDT', available: '30' }], onChanged: changed });
+    const host = document.createElement('div'); document.body.append(host);
+    const app = createApp(defineComponent({ setup: () => () => h(TransferPanel, props) }));
+    app.config.globalProperties.$t = (key: string) => key;
+    for (const name of ['van-icon','van-loading','van-empty','van-field']) app.component(name, defineComponent({ render: () => h('span') }));
+    app.component('van-form', defineComponent({ setup: (_, { slots }) => () => h('form', slots.default?.()) }));
+    app.component('van-button', defineComponent({ setup: (_, { slots }) => () => h('button', slots.default?.()) }));
+    apps.push(app); app.mount(host); await settle();
+    const selected = () => [...host.querySelectorAll('.selected-wallet-balance')].map(item => item.textContent);
+    expect(selected()).toEqual(['user.wallet.available 10 token','user.wallet.available 20 token']);
+    host.querySelector<HTMLButtonElement>('.wallet-selector')!.click(); await settle();
+    expect(changed).toHaveBeenCalledOnce();
+    expect(host.querySelectorAll('.wallet-selector-field [role=listbox]')).toHaveLength(1);
+    const options = host.querySelectorAll<HTMLButtonElement>('.wallet-option');
+    expect([...options].map(item => item.textContent)).toEqual(['user.wallet.COMPUTE10 token','user.wallet.EARNINGS30 token']);
+    expect(host.textContent).not.toContain('999');
+    options[1]!.click(); await settle();
+    expect(selected()).toEqual(['user.wallet.available 30 token','user.wallet.available 20 token']);
+    props.wallets[2]!.available = '51'; await settle();
+    expect(selected()[0]).toBe('user.wallet.available 51 token');
+  });
+});

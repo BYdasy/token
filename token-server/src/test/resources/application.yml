@@ -1,0 +1,30 @@
+spring:
+  main:
+    banner-mode: "off"
+  datasource:
+    # 普通构建只连接内存库，不继承开发或部署环境的数据库连接。
+    url: jdbc:h2:mem:token_context_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+google:
+  project:
+    id: ""
+
+token:
+  mcag:
+    enabled: false
+
+exp:
+  scheduling:
+    # 调度业务由各自的隔离测试直接调用，构建期间不自动轮询支付或通知。
+    enabled: false
+  cache:
+    redis-enabled: false
+  jwt:
+    secret: exp-test-jwt-secret-at-least-32-characters
+  totp:
+    issuer: EXP-TEST
+    encryption-key: exp-test-totp-encryption-key-at-least-32-characters
+    recent-verification-minutes: 10

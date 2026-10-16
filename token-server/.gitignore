@@ -1,0 +1,11 @@
+target/
+.idea/*
+!.idea/compiler.xml
+!.idea/misc.xml
+*.iml
+data/
+logs/
+.env
+
+# 本机 MCAG 商户私钥和接入配置
+.local/
