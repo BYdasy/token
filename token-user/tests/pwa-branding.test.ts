@@ -100,11 +100,11 @@ describe('PWA 品牌资源', () => {
     const pwa = await import('../src/utils/pwa');
     pwa.updatePwaBranding({ siteIcon: 'https://cdn.example/brand.svg?v=2' });
     expect((await manifest()).icons[0]).toMatchObject({ src: 'https://cdn.example/brand.svg?v=2', sizes: 'any', type: 'image/svg+xml' });
-    expect(link('apple-touch-icon').href).toContain('/apple-touch-icon.png?v=20261008');
+    expect(link('apple-touch-icon').href).toContain('/apple-touch-icon.png?v=20261018-tensor-ai');
     for (const siteIcon of ['/api/material/image/', 'javascript:alert(1)', 'data:image/png;base64,AA==', 'https://name:password@cdn.example/icon.png']) {
       pwa.updatePwaBranding({ siteName: siteIcon, siteIcon });
       expect((await manifest()).icons).toHaveLength(3);
-      expect((await manifest()).icons[0].src).toContain('/icon-192.png?v=20261008');
+      expect((await manifest()).icons[0].src).toContain('/icon-192.png?v=20261018-tensor-ai');
     }
   });
 
@@ -113,7 +113,7 @@ describe('PWA 品牌资源', () => {
     vi.spyOn(URL, 'createObjectURL').mockImplementation(() => { throw new Error('unavailable'); });
     const pwa = await import('../src/utils/pwa');
     pwa.updatePwaBranding({ siteName: 'Brand' });
-    expect(link('manifest').href).toBe(`${window.location.origin}/customer/manifest.webmanifest?v=20261008`);
+    expect(link('manifest').href).toBe(`${window.location.origin}/customer/manifest.webmanifest?v=20261018-tensor-ai`);
   });
 
   it('品牌更新不重注册 SW，安装事件及重复点击保护仍按原流程执行', async () => {

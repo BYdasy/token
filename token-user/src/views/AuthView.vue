@@ -430,6 +430,7 @@ async function submit() {
 .vora-access-brand :deep(.brand-image) { width: 100px; height: 100px; flex-basis: 100px; }
 .vora-access-brand :deep(.brand-copy) { max-width: 100%; }
 .vora-access-brand :deep(.brand-copy strong) { font-size: 44px; line-height: 1.15; }
+.vora-access-brand :deep(.brand-wordmark .brand-image) { width: min(100%, 320px); height: auto; aspect-ratio: 3 / 1; flex-basis: auto; }
 .vora-access-brand p { margin: 12px 0 0; font-family: 'Vora Display', Georgia, 'Noto Serif SC', serif; color: var(--vora-primary); font-size: 16px; line-height: 1.7; text-wrap: balance; }
 .vora-access-card { padding: 24px; border-radius: 16px; background: #fdfaf8f7; box-shadow: 0 14px 40px #3b142b09; }
 .vora-access-card h1 { margin: 0 0 12px; font-size: 23px; color: var(--vora-primary); }
@@ -474,6 +475,7 @@ async function submit() {
   .vora-access-brand { padding: 40px 32px 130px; }
   .vora-access-brand :deep(.brand-image) { width: 130px; height: 130px; flex-basis: 130px; }
   .vora-access-brand :deep(.brand-copy strong) { font-size: 64px; }
+  .vora-access-brand :deep(.brand-wordmark .brand-image) { width: 100%; max-width: 440px; height: auto; flex-basis: auto; }
   .vora-access-brand p { font-size: 20px; }
   .vora-access-card { padding: 30px 32px; }
 }

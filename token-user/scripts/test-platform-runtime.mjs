@@ -78,16 +78,15 @@ const renderer = vue.createRenderer({
 });
 
 const start = Date.parse('2026-10-17T00:00:00Z');
-function fixture({ count = 66, offset = 0, seed = 100, ...overrides } = {}) {
+function fixture({ count = 66, offset = 0, seed = 100, sampleSeconds = 2, ...overrides } = {}) {
   const samples = Array.from({ length: count }, (_, index) => ({
-    at: new Date(start + offset + index * 2000).toISOString(),
-    activeNodes: String(seed + index), runningPools: String(20 + index),
-    consumed: String(1000 + index * 10), utilizationPercent: String(10 + index / 10),
+    at: new Date(start + offset + index * sampleSeconds * 1000).toISOString(),
+    onlineGpus: String(seed + index), exaflops: (4.15 + (index % 36) / 100).toFixed(2),
   }));
   return {
-    enabled: true, mode: 'AUTO', simulated: true, totalNodes: '1000', totalPools: '100', capacity: '10000',
-    activeNodes: String(seed), runningPools: '20', consumed: '1000', utilizationPercent: '10',
-    sampleSeconds: 2, refreshSeconds: 60, serverTime: new Date(start + offset).toISOString(),
+    enabled: true, mode: 'AUTO', simulated: true, totalExaflops: '5.0',
+    onlineGpus: String(seed), exaflops: '4.15',
+    sampleSeconds, changeSeconds: sampleSeconds, refreshSeconds: 60, serverTime: new Date(start + offset).toISOString(),
     updatedAt: samples[0]?.at, samples, ...overrides,
   };
 }
@@ -148,7 +147,7 @@ function environment(initial = fixture()) {
   const Runtime = vue.defineComponent({
     setup() {
       model = usePlatformRuntime();
-      return () => vue.h('output', { 'data-playing': model.playing.value }, model.runtime.value?.activeNodes ?? '');
+      return () => vue.h('output', { 'data-playing': model.playing.value }, model.runtime.value?.onlineGpus ?? '');
     },
   });
   const root = node('root');
@@ -176,13 +175,13 @@ function environment(initial = fixture()) {
 }
 
 test('时间线从服务器时间选择已到时的最新样本，手动/停用及无效时间均不播放', () => {
-  const { runtimeSampleAt, runtimeTimelineAvailable, runtimeSyncMilliseconds } = evaluate(timelineSource, {});
+  const { runtimeSampleAt, runtimeSampleMilliseconds, runtimeTimelineAvailable, runtimeSyncMilliseconds } = evaluate(timelineSource, {});
   const value = fixture({ count: 3 });
   value.samples.reverse();
-  assert.equal(runtimeSampleAt(value, -500).activeNodes, '100');
-  assert.equal(runtimeSampleAt(value, 1999).activeNodes, '100');
-  assert.equal(runtimeSampleAt(value, 2000).activeNodes, '101');
-  assert.equal(runtimeSampleAt(value, 4500).activeNodes, '102');
+  assert.equal(runtimeSampleAt(value, -500).onlineGpus, '100');
+  assert.equal(runtimeSampleAt(value, 1999).onlineGpus, '100');
+  assert.equal(runtimeSampleAt(value, 2000).onlineGpus, '101');
+  assert.equal(runtimeSampleAt(value, 4500).onlineGpus, '102');
   assert.equal(runtimeTimelineAvailable(value, 5999), true);
   assert.equal(runtimeTimelineAvailable(value, 6000), false);
   assert.equal(runtimeSampleAt({ ...value, mode: 'MANUAL' }, 0), undefined);
@@ -192,19 +191,54 @@ test('时间线从服务器时间选择已到时的最新样本，手动/停用�
   assert.equal(runtimeSyncMilliseconds({ refreshSeconds: 2 }), 10000);
   assert.equal(runtimeSyncMilliseconds({ refreshSeconds: 900 }), 300000);
   assert.equal(runtimeSyncMilliseconds(), 60000);
+  assert.equal(runtimeSampleMilliseconds({ sampleSeconds: 5, changeSeconds: 2 }), 5000);
+  assert.equal(runtimeSampleMilliseconds({ changeSeconds: 300 }), 300000);
+  assert.equal(runtimeSampleMilliseconds({ sampleSeconds: NaN }), 2000);
+  assert.equal(runtimeSampleMilliseconds({ sampleSeconds: 0 }), 1000);
+  assert.equal(runtimeSampleMilliseconds({ sampleSeconds: Infinity }), 2000);
+});
+
+test('自动变化频率由服务端配置决定，与60秒配置同步相互独立', async (t) => {
+  const initial = fixture({ sampleSeconds: 5 });
+  const env = environment(initial); t.after(env.close);
+  await env.ready(initial);
+  await env.time.advance(4999);
+  assert.equal(env.model.runtime.value.onlineGpus, '100');
+  await env.time.advance(1);
+  assert.equal(env.model.runtime.value.onlineGpus, '101');
+  assert.equal(env.model.runtime.value.exaflops, '4.16');
+  assert.equal(env.model.runtime.value.nextUpdateAt, '2026-10-17T00:00:10.000Z');
+  await env.time.advance(54999);
+  assert.equal(env.requests.length, 1);
+  await env.time.advance(1);
+  assert.equal(env.requests.length, 2);
+  env.requests[1].resolve(fixture({ sampleSeconds: 1, offset: 60000, seed: 500 }));
+  await flush();
+  await env.time.advance(1000);
+  assert.equal(env.model.runtime.value.onlineGpus, '501');
+  assert.equal(env.requests.length, 2, '修改变化频率不应触发逐帧请求');
+});
+
+test('低频时间线按最后一帧的配置周期到期而非固定2秒', () => {
+  const { runtimeTimelineAvailable, runtimeSampleAt } = evaluate(timelineSource, {});
+  const runtime = fixture({ sampleSeconds: 300, count: 2 });
+  assert.equal(runtimeSampleAt(runtime, 299999).onlineGpus, '100');
+  assert.equal(runtimeSampleAt(runtime, 300000).onlineGpus, '101');
+  assert.equal(runtimeTimelineAvailable(runtime, 599999), true);
+  assert.equal(runtimeTimelineAvailable(runtime, 600000), false);
 });
 
 test('每2秒播放已返回的快照，60秒才同步一次且不携带现有登录凭据', async (t) => {
   const env = environment(); t.after(env.close);
   await env.ready();
-  assert.equal(env.model.runtime.value.activeNodes, '100');
+  assert.equal(env.model.runtime.value.onlineGpus, '100');
   assert.equal(env.model.playing.value, true);
   await env.time.advance(1999);
-  assert.equal(env.model.runtime.value.activeNodes, '100');
+  assert.equal(env.model.runtime.value.onlineGpus, '100');
   await env.time.advance(1);
-  assert.equal(env.model.runtime.value.activeNodes, '101');
+  assert.equal(env.model.runtime.value.onlineGpus, '101');
   await env.time.advance(2000);
-  assert.equal(env.model.runtime.value.activeNodes, '102');
+  assert.equal(env.model.runtime.value.onlineGpus, '102');
   await env.time.advance(55999);
   assert.equal(env.requests.length, 1, '初次校准后，本地播放不重复请求公开接口');
   await env.time.advance(1);
@@ -217,7 +251,7 @@ test('每2秒播放已返回的快照，60秒才同步一次且不携带现有�
   assert.equal(env.requests[0].options.headers['X-Background-Request'], 'true');
   env.requests[1].resolve(fixture({ offset: 60000, seed: 500 }));
   await flush();
-  assert.equal(env.model.runtime.value.activeNodes, '500');
+  assert.equal(env.model.runtime.value.onlineGpus, '500');
   await env.time.advance(59999);
   assert.equal(env.requests.length, 2);
   await env.time.advance(1);
@@ -231,7 +265,7 @@ for (const overrides of [{ mode: 'MANUAL' }, { enabled: false }]) {
     assert.equal(env.time.count(), 0);
     await env.time.advance(180000);
     assert.equal(env.requests.length, 0);
-    assert.equal(env.model.runtime.value.activeNodes, '100');
+    assert.equal(env.model.runtime.value.onlineGpus, '100');
   });
 }
 
@@ -239,7 +273,7 @@ test('暂停冻结展示并取消请求，继续时按经过时间跳到当前�
   const env = environment(); t.after(env.close);
   await env.ready();
   await env.time.advance(60000);
-  const before = env.model.runtime.value.activeNodes;
+  const before = env.model.runtime.value.onlineGpus;
   env.model.togglePause();
   await flush();
   assert.equal(env.model.paused.value, true);
@@ -247,10 +281,10 @@ test('暂停冻结展示并取消请求，继续时按经过时间跳到当前�
   assert.equal(env.requests[1].options.signal.aborted, true);
   assert.equal(env.time.count(), 0);
   await env.time.advance(1000);
-  assert.equal(env.model.runtime.value.activeNodes, before);
+  assert.equal(env.model.runtime.value.onlineGpus, before);
   env.model.togglePause();
   await flush();
-  assert.equal(env.model.runtime.value.activeNodes, '130');
+  assert.equal(env.model.runtime.value.onlineGpus, '130');
   assert.equal(env.model.playing.value, true);
   assert.equal(env.requests.length, 2, '继续展示不触发过密同步');
   await env.time.advance(8999);
@@ -267,11 +301,11 @@ test('页面隐藏取消请求和计时器，恢复可见后不重放旧帧', as
   assert.equal(env.model.playing.value, false);
   assert.equal(env.requests[1].options.signal.aborted, true);
   assert.equal(env.time.count(), 0);
-  const before = env.model.runtime.value.activeNodes;
+  const before = env.model.runtime.value.onlineGpus;
   await env.time.advance(1000);
-  assert.equal(env.model.runtime.value.activeNodes, before);
+  assert.equal(env.model.runtime.value.onlineGpus, before);
   await env.hidden(false);
-  assert.equal(env.model.runtime.value.activeNodes, '130');
+  assert.equal(env.model.runtime.value.onlineGpus, '130');
   assert.equal(env.requests.length, 2);
   await env.time.advance(8999);
   assert.equal(env.requests.length, 2);
@@ -288,11 +322,11 @@ test('KeepAlive离页停止计时和读取，返回按当前时间恢复，卸�
     assert.equal(env.requests[1].options.signal.aborted, true);
     assert.equal(env.time.count(), 0);
     assert.equal(env.listeners.size, 0);
-    const before = env.model.runtime.value.activeNodes;
+    const before = env.model.runtime.value.onlineGpus;
     await env.time.advance(1000);
-    assert.equal(env.model.runtime.value.activeNodes, before);
+    assert.equal(env.model.runtime.value.onlineGpus, before);
     await env.mounted(true);
-    assert.equal(env.model.runtime.value.activeNodes, '130');
+    assert.equal(env.model.runtime.value.onlineGpus, '130');
     assert.equal(env.listeners.size, 1);
     await env.time.advance(9000);
     assert.equal(env.requests.length, 3);
@@ -308,14 +342,14 @@ test('配置替换取消旧请求，忽略取消后仍迟到的响应', async (t
   await env.ready();
   await env.time.advance(60000);
   env.requests[1].ignoreAbort = true;
-  env.session.config = { presentation: { runtime: fixture({ mode: 'MANUAL', activeNodes: '900' }) } };
+  env.session.config = { presentation: { runtime: fixture({ mode: 'MANUAL', onlineGpus: '900' }) } };
   await flush();
   assert.equal(env.requests[1].options.signal.aborted, true);
   assert.equal(env.time.count('runtime'), 0);
-  assert.equal(env.model.runtime.value.activeNodes, '900');
+  assert.equal(env.model.runtime.value.onlineGpus, '900');
   env.requests[1].resolve(fixture({ offset: 60000, seed: 500 }));
   await flush();
-  assert.equal(env.model.runtime.value.activeNodes, '900');
+  assert.equal(env.model.runtime.value.onlineGpus, '900');
   assert.equal(env.session.config.presentation.runtime.mode, 'MANUAL');
   assert.equal(env.time.count(), 0);
 });
@@ -324,26 +358,26 @@ test('服务端时间线耗尽后保留最后一帧，不推算新数值', async
   const env = environment(fixture({ count: 3 })); t.after(env.close);
   await env.ready();
   await env.time.advance(5999);
-  assert.equal(env.model.runtime.value.activeNodes, '102');
+  assert.equal(env.model.runtime.value.onlineGpus, '102');
   assert.equal(env.model.playing.value, true);
   await env.time.advance(1);
   assert.equal(env.model.playing.value, false);
   assert.equal(env.time.count('runtime'), 1, '耗尽后只保留配置同步计时器');
   await env.time.advance(10000);
-  assert.equal(env.model.runtime.value.activeNodes, '102');
+  assert.equal(env.model.runtime.value.onlineGpus, '102');
   assert.equal(env.requests.length, 2, '初次校准加时间线过期后的受限补读');
 });
 
 test('本地墙钟前后跳变不影响服务器时间加单调时钟的播放顺序', async (t) => {
   const env = environment(); t.after(env.close);
   await env.ready();
-  assert.equal(env.model.runtime.value.activeNodes, '100');
+  assert.equal(env.model.runtime.value.onlineGpus, '100');
   env.time.wall = Date.parse('1990-01-01T00:00:00Z');
   await env.time.advance(2000);
-  assert.equal(env.model.runtime.value.activeNodes, '101');
+  assert.equal(env.model.runtime.value.onlineGpus, '101');
   env.time.wall = Date.parse('2090-01-01T00:00:00Z');
   await env.time.advance(2000);
-  assert.equal(env.model.runtime.value.activeNodes, '102');
+  assert.equal(env.model.runtime.value.onlineGpus, '102');
   assert.equal(env.model.runtime.value.updatedAt, '2026-10-17T00:00:04.000Z');
   assert.equal(env.requests.length, 1);
 });
@@ -352,12 +386,12 @@ test('首页真正卸载后重新进入复用快照时间锚点，不能倒放�
   const env = environment(); t.after(env.close);
   await env.ready();
   await env.time.advance(4000);
-  assert.equal(env.model.runtime.value.activeNodes, '102');
+  assert.equal(env.model.runtime.value.onlineGpus, '102');
   env.close();
   await flush();
   await env.time.advance(4000);
   await env.remount();
-  assert.equal(env.model.runtime.value.activeNodes, '104', '重入沿用同一快照的接收时间');
+  assert.equal(env.model.runtime.value.onlineGpus, '104', '重入沿用同一快照的接收时间');
   assert.equal(env.requests.length, 1);
   await env.time.advance(1999);
   assert.equal(env.requests.length, 1);

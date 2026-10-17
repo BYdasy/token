@@ -7,7 +7,7 @@ const html = '<!doctype html><html><head><meta name="viewport" content="width=de
 function documentFor(value: string) { return new DOMParser().parseFromString(value, 'text/html'); }
 function meta(doc: Document, key: string) { return doc.querySelector(`meta[property="${key}"],meta[name="${key}"]`)?.getAttribute('content'); }
 function setup(options: Record<string, unknown> = {}, base = '/') {
-  const plugin = sharePreviewPlugin({ root: process.cwd(), ...options });
+  const plugin = sharePreviewPlugin({ root: process.cwd(), settingsUrl: 'https://public.example/api/system/settings/public', siteUrl: 'https://public.example/', ...options });
   (plugin.configResolved as Function)({ base });
   const handler = (plugin.transformIndexHtml as { handler: Function }).handler;
   return (input = html) => handler(input);
@@ -24,7 +24,7 @@ describe('初始HTML中的静态分享预览', () => {
     const transform = setup();
     const [first, second] = await Promise.all([transform(), transform()]);
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(String(fetcher.mock.calls[0]![0])).toBe(snapshot.sourceSettingsUrl);
+    expect(String(fetcher.mock.calls[0]![0])).toBe('https://public.example/api/system/settings/public');
     expect(fetcher.mock.calls[0]![1]).toMatchObject({ redirect: 'error', credentials: 'omit' });
     expect(first).toBe(second);
     const doc = documentFor(first);
@@ -32,7 +32,7 @@ describe('初始HTML中的静态分享预览', () => {
     expect(meta(doc, 'description')).toBe('Current description');
     expect(meta(doc, 'og:site_name')).toBe('Current site');
     expect(meta(doc, 'og:url')).toBeUndefined();
-    expect(meta(doc, 'og:image')).toBe('https://current.example/api/material/image/current.webp');
+    expect(meta(doc, 'og:image')).toBe('https://public.example/api/material/image/current.webp');
     expect(meta(doc, 'twitter:title')).toBe('Current preview');
     expect(meta(doc, 'twitter:image')).toBe(meta(doc, 'og:image'));
     expect(doc.querySelectorAll('script')).toHaveLength(1);
@@ -49,7 +49,7 @@ describe('初始HTML中的静态分享预览', () => {
     const doc = documentFor(await setup()());
     expect(doc.title).toBe(snapshot.userShareTitle);
     expect(meta(doc, 'description')).toBe(snapshot.userShareDescription);
-    expect(meta(doc, 'og:image')).toBe(new URL(snapshot.userShareImage, snapshot.siteUrl).href);
+    expect(meta(doc, 'og:image')).toBe('https://public.example/brand.png?v=20261018-tensor-ai');
   });
 
   it('读取超时后继续使用快照，后续请求不再等待或重试', async () => {
@@ -75,7 +75,7 @@ describe('初始HTML中的静态分享预览', () => {
     const doc = documentFor(await setup({}, '/portal/')());
     expect(doc.title).toBe('New name');
     expect(meta(doc, 'og:url')).toBeUndefined();
-    expect(meta(doc, 'og:image')).toBe('https://duotaivora.com/portal/brand.png?v=20261008');
+    expect(meta(doc, 'og:image')).toBe('https://public.example/portal/brand.png?v=20261018-tensor-ai');
   });
 
   it('恶意标题/说明无法注入标签，美元替换符保持原文，重复转换不产生多份元数据', () => {
@@ -94,7 +94,7 @@ describe('初始HTML中的静态分享预览', () => {
 
   it.each(['javascript:alert(1)', 'data:image/svg+xml,bad', '//evil.example/a.png', 'https://u:p@evil.example/a.png', 'http://127.0.0.1/x', 'http://169.254.169.254/x', 'http://10.1.1.1/x', 'https://local.internal/x'])('无效或私有图片地址不会进入分享标签：%s', image => {
     const doc = documentFor(renderSharePreviewHtml(html, { siteUrl: 'https://public.example/', userShareImage: image }));
-    expect(meta(doc, 'og:image')).toBe('https://public.example/brand.png?v=20261008');
+    expect(meta(doc, 'og:image')).toBe('https://public.example/brand.png?v=20261018-tensor-ai');
   });
 
   it('BASE_URL保留用户部署路径，CDN资源域名和多域名部署不导致页面跳转', () => {
@@ -107,9 +107,17 @@ describe('初始HTML中的静态分享预览', () => {
 
   it('不存在预留文件或无效读取地址仍可生成基本预览，不向任意接口发请求', async () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
-    const doc = documentFor(await setup({ snapshotPath: resolve(process.cwd(), 'missing-share-preview.json'), settingsUrl: 'https://public.example/api/private' })());
-    expect(doc.title).toBe('duotaivora');
-    expect(meta(doc, 'og:image')).toBe('https://duotaivora.com/brand.png?v=20261008');
+    const doc = documentFor(await setup({ snapshotPath: resolve(process.cwd(), 'missing-share-preview.json'), settingsUrl: 'https://public.example/api/private', siteUrl: '' })());
+    expect(doc.title).toBe('Tensor AI');
+    expect(meta(doc, 'og:image')).toBeUndefined();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('未配置公开域名时不连接旧站点，不生成虚构图片域名', async () => {
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    const doc = documentFor(await setup({ settingsUrl: '', siteUrl: '' })());
+    expect(doc.title).toBe('Tensor AI');
+    expect(meta(doc, 'og:image')).toBeUndefined();
     expect(fetcher).not.toHaveBeenCalled();
   });
 });

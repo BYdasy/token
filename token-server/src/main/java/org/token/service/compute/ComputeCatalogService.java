@@ -74,8 +74,8 @@ public class ComputeCatalogService {
     /** 首页在数据库层限制摘要数量，避免游客读取完整目录或触发无关 VIP 补译。 */
     public Map<String,Object> homeCatalog(String language) {
         return Map.of("summaryCurrency", data.setting("summaryCurrency", "USDT"),
-                "products", localizedRows("products",repository.homeCatalogProductRows(),language),
-                "models", publicModels(6));
+                "products", List.of(), "models", List.of(),
+                "partners", repository.homePartners());
     }
 
     private List<Map<String,Object>> publicModels(int limit) {

@@ -6,6 +6,7 @@ import { showSuccessToast, showFailToast } from "vant";
 import { useTask } from "@/composables/useTask";
 import { copyText } from "@/utils/format";
 import { imageSource } from "@/utils/image-source";
+import { brandAsset } from "@/utils/brand-assets";
 
 const props = defineProps<{
   inviteCode: string;
@@ -21,7 +22,7 @@ const error = ref("");
 let generation = 0;
 let disposed = false;
 const posterScene = `${import.meta.env.BASE_URL}images/vora/invitation.png`;
-const posterMark = `${import.meta.env.BASE_URL}vora-mark.svg`;
+const posterMark = brandAsset('icon-512.png');
 
 function loadPosterImage(source: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {

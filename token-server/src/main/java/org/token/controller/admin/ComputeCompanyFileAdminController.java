@@ -37,7 +37,7 @@ public class ComputeCompanyFileAdminController {
     @LogAction(type = "上传公司文件")
     public Result upload(@RequestParam("file") MultipartFile file) {
         var saved = service.upload(file);
-        LoggingAspect.setLogDetails("上传公司PDF，编号：" + saved.get("id"), 1);
+        LoggingAspect.setLogDetails("上传公司文件，编号：" + saved.get("id"), 1);
         return results.success(saved);
     }
 
@@ -59,7 +59,23 @@ public class ComputeCompanyFileAdminController {
         return results.success(saved);
     }
 
+    @PostMapping("/video-links")
+    @PreAuthorize("hasAnyAuthority('71001','super')")
+    @LogAction(type = "新增公司视频链接")
+    public Result createVideoLink(@RequestBody Map<String, Object> input) {
+        var saved = service.createVideoLink(input);
+        LoggingAspect.setLogDetails("新增公司视频链接，编号：" + saved.get("id"), 1);
+        return results.success(saved);
+    }
+
     @GetMapping("/{id}/pdf")
     @PreAuthorize("hasAnyAuthority('71000','71001','super')")
     public ResponseEntity<Resource> pdf(@PathVariable long id) { return service.pdf(id, true); }
+
+    @GetMapping("/{id}/video")
+    @PreAuthorize("hasAnyAuthority('71000','71001','super')")
+    public ResponseEntity<Resource> video(@PathVariable long id, jakarta.servlet.http.HttpServletRequest request) {
+        var response = service.video(id, true, false);
+        return "HEAD".equals(request.getMethod()) ? ResponseEntity.status(response.getStatusCode()).headers(response.getHeaders()).build() : response;
+    }
 }

@@ -95,7 +95,7 @@ onUnmounted(() => window.removeEventListener("token-user-expired", expired));
             :to="item.to"
             :class="{ active: navigationActive(item.to, route.path) }"
             :aria-current="navigationActive(item.to, route.path) ? 'page' : undefined"
-            ><van-icon :name="item.icon" aria-hidden="true" /><span>{{
+            ><InterfaceIcon v-if="item.icon === 'income-levels'" name="income-levels" class="navigation-icon" /><van-icon v-else :name="item.icon" aria-hidden="true" /><span>{{
               $t(`user.vora.nav.${item.key}`)
             }}</span></RouterLink
           >
@@ -136,6 +136,7 @@ onUnmounted(() => window.removeEventListener("token-user-expired", expired));
   </div>
 </template>
 <style scoped>
+.navigation-icon { width: 19px; height: 19px; flex-basis: 19px; }
 .message-entry {
   width: 44px;
   height: 44px;

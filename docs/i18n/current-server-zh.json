@@ -41,8 +41,11 @@
   "server.compute.companyFile.changed": "公司文件已被其他管理员修改，请刷新后重试。",
   "server.compute.companyFile.invalidLink": "请输入有效的 HTTP 或 HTTPS 外部链接，链接不能包含账号和密码。",
   "server.compute.companyFile.invalidPdf": "请上传有效的 PDF 文件，文件名最多 200 字且不能包含路径或控制字符。",
+  "server.compute.companyFile.invalidVideo": "请上传有效的 MP4 或 WebM 视频文件",
+  "server.compute.companyFile.invalidVideoLink": "请输入有效的 YouTube、Vimeo 或 HTTPS MP4/WebM 视频地址",
   "server.compute.companyFile.notFound": "公司文件不存在、已停用或暂时无法读取。",
   "server.compute.companyFile.tooLarge": "公司 PDF 文件不能超过 20 MB。",
+  "server.compute.companyFile.videoTooLarge": "视频文件超过当前允许的上传大小",
   "server.compute.content.audienceLocked": "已发布内容不能修改发送对象，请创建新内容",
   "server.compute.content.bodyRequired": "请填写有效的内容正文",
   "server.compute.content.deliveryFailed": "内容投递失败，请检查后重试，已投递记录不会重复",
@@ -163,6 +166,7 @@
   "server.compute.transferRuleMissing": "当前钱包方向、币种或金额范围未开放划转",
   "server.compute.ui.credentialsRequired": "请输入有效的当前登录密码和原支付密码",
   "server.compute.ui.runtimeInvalid": "运行数据不一致：活跃值或消耗超过总量，或无活跃节点却存在运行任务",
+  "server.compute.ui.runtimeMetricsInvalid": "运行数据配置无效：请检查算力总容量、变化范围、GPU 数量和时间间隔",
   "server.compute.ui.settingsInvalid": "用户端展示配置无效，请检查语言、图片地址、数值和汇率",
   "server.compute.ui2.teamDateRange": "团队趋势日期须为有效日期，范围最多93个自然日",
   "server.compute.unknownJob": "未识别的后台任务类型",
@@ -376,5 +380,8 @@
   "server.v36.analytics.timeRange": "请选择有效的起止时间（精确到秒，最多93个自然日）；开始不得晚于结束，请避开系统时区夏令时重复或不存在的时间。",
   "server.v6.analytics.dateRange": "请选择有效的日期范围，最多93个自然日。",
   "server.v6.messages.sourceRequired": "请完整填写中文原文标题和正文。",
-  "server.v7.translation.systemTemplateProtected": "系统通知固定键只能在通知消息模板6中编辑，不能新增、删除或更改内容格式。"
+  "server.v7.translation.systemTemplateProtected": "系统通知固定键只能在通知消息模板6中编辑，不能新增、删除或更改内容格式。",
+  "server.notification.template.testVariablesInvalid": "测试变量格式不正确",
+  "server.notification.template.testLanguageInvalid": "测试语言格式不正确",
+  "server.notification.template.testVariablesRequired": "请填写模板中的全部测试变量"
 }

@@ -13,6 +13,7 @@ import { showTaskPrompt } from "@/composables/useTaskPrompt";
 import { date, money } from "@/utils/format";
 import AutoExecutionDialog from "./AutoExecutionDialog.vue";
 import RecentAutoIncome from "./RecentAutoIncome.vue";
+import VipLevelList from "./VipLevelList.vue";
 
 const computeHero = `${import.meta.env.BASE_URL}images/vora/home.png`;
 
@@ -37,6 +38,8 @@ const statusLoading = ref(false),
   resultOpen = ref(false);
 const nonce = ref(requestId()),
   clock = ref(Date.now());
+const refreshAfterAnimation = ref<string>();
+const pageVisible = ref(!document.hidden);
 let disposed = false,
   generation = 0,
   offset = 0,
@@ -187,9 +190,9 @@ async function open() {
     }
     if (disposed || token !== session.token) return;
     selected.value = result;
+    refreshAfterAnimation.value = String(result.orderNo || '');
     nonce.value = requestId();
     if (status.value) status.value.canExecute = false;
-    emit("changed", false);
     await refreshStatus(true);
   });
   if (!disposed) {
@@ -205,6 +208,7 @@ async function showResult(row: AutoExecution) {
     await refreshStatus(false, false);
 }
 function visibilityChanged() {
+  pageVisible.value = !document.hidden;
   stopPoll();
   if (!document.hidden) {
     clock.value = Date.now() + offset;
@@ -212,6 +216,16 @@ function visibilityChanged() {
     void refreshStatus();
   }
 }
+// 收益已由服务端即时入账；这里只让本页展示在运行动画完成后一起更新。
+watch(
+  [animating, () => submitTask.loading.value, () => selected.value?.orderNo, pageVisible],
+  ([running, submitting, orderNo, visible]) => {
+    if (visible && !running && !submitting && orderNo && String(orderNo) === refreshAfterAnimation.value) {
+      refreshAfterAnimation.value = undefined;
+      emit("changed", true);
+    }
+  },
+);
 watch(
   [() => session.token, locale],
   ([token], previous) => {
@@ -225,6 +239,7 @@ watch(
       selected.value = undefined;
       resultOpen.value = false;
       nonce.value = requestId();
+      refreshAfterAnimation.value = undefined;
     }
     failures = 0;
     if (session.token) void refreshStatus();
@@ -300,7 +315,8 @@ onUnmounted(() => {
       <button v-if="pending" class="text-button vora-pending-details" @click="showResult(pending)"><van-icon name="clock-o" />{{ $t("user.v10.detailsPending") }}<van-icon name="arrow" /></button>
     </section>
 
-    <RecentAutoIncome :execution-order="selected?.orderNo" />
+    <RecentAutoIncome :execution-order="selected?.orderNo" :suspended="!status || submitTask.loading.value || animating" />
+    <VipLevelList v-if="levels.length" :levels="levels" :current-level="currentLevel" :currency="currency" />
     <AutoExecutionDialog v-model:show="resultOpen" :selected="selected" :now="clock" :starting="submitTask.loading.value" :status-loading="statusLoading" :status-error="statusError" @refresh="refreshStatus(false, false)" />
   </div>
 </template>
@@ -360,7 +376,7 @@ onUnmounted(() => {
  .vora-execute-button { grid-column: 2; grid-row: 1; }
  .vora-execution-caption { grid-column: 2; grid-row: 2; }
  .vora-execution-panel > .inline-error, .vora-pending-details { grid-column: 1 / -1; }
- .ui-token-console > :deep(.vora-recent-income) { grid-column: 1 / -1; }
+ .ui-token-console > :deep(.vora-recent-income), .ui-token-console > :deep(.vip-level-list) { grid-column: 1 / -1; }
 }
 @media (max-width: 640px) {
  .ui-auto-pool.ui-token-console { gap: 10px; }

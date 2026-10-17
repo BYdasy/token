@@ -1,6 +1,7 @@
 package org.token.repository.dao;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.annotations.*;
 import org.token.model.entity.NotificationChannelConfig;
 import org.token.model.entity.NotificationTelegramBinding;
@@ -13,6 +14,13 @@ public interface NotificationTelegramBindingMapper extends BaseMapper<Notificati
             + "WHERE c.channel_type='TELEGRAM' <if test='channelId != null'>AND b.channel_id=#{channelId}</if> "
             + "<if test='enabledOnly'>AND b.enabled=1 AND c.enabled=1</if> ORDER BY b.channel_id,b.id</script>")
     List<NotificationTelegramBinding> findBindings(@Param("channelId") Long channelId, @Param("enabledOnly") boolean enabledOnly);
+
+    @Select("<script>SELECT b.id,b.channel_id AS channelId,b.chat_id AS chatId,b.name,b.chat_type AS chatType,b.enabled,b.created_at AS createdAt,b.updated_at AS updatedAt "
+            + "FROM notification_telegram_binding b JOIN notification_channel_config c ON c.id=b.channel_id WHERE c.channel_type='TELEGRAM' "
+            + "<if test='channelId != null'>AND b.channel_id=#{channelId}</if> "
+            + "<if test='keyword != null and keyword != &quot;&quot;'>AND (b.name LIKE CONCAT('%',#{keyword},'%') OR b.chat_id LIKE CONCAT('%',#{keyword},'%'))</if> "
+            + "ORDER BY b.channel_id,b.id</script>")
+    Page<NotificationTelegramBinding> findPage(Page<NotificationTelegramBinding> page, @Param("channelId") Long channelId, @Param("keyword") String keyword);
 
     @Select("SELECT id,name,channel_type AS channelType,enabled FROM notification_channel_config WHERE id=#{id} FOR UPDATE")
     NotificationChannelConfig lockChannel(@Param("id") Long id);

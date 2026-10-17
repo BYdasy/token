@@ -249,10 +249,10 @@ public class SystemSettingServiceImpl
         String zone = currentSystemTimeZone(values.getOrDefault(TIME_ZONE, yamlTimeZone));
         ZoneId zoneId = resolveZone(zone);
         return SystemSettingsView.builder()
-                .siteName(values.getOrDefault(SITE_NAME, "token系统 管理后台"))
+                .siteName(values.getOrDefault(SITE_NAME, "Tensor AI"))
                 .siteIcon(values.getOrDefault(SITE_ICON, ""))
                 .siteLogo(values.getOrDefault(SITE_LOGO, values.getOrDefault(SITE_ICON, "")))
-                .userSiteName(values.getOrDefault(USER_SITE_NAME, "token系统"))
+                .userSiteName(values.getOrDefault(USER_SITE_NAME, "Tensor AI"))
                 .userSiteLogo(values.getOrDefault(USER_SITE_LOGO, ""))
                 .userSiteIcon(values.getOrDefault(USER_SITE_ICON, ""))
                 .userHeroImage(values.getOrDefault(USER_HERO_IMAGE, ""))

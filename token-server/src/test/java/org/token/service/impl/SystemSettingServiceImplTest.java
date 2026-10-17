@@ -79,7 +79,7 @@ class SystemSettingServiceImplTest {
         assertEquals("运营后台",view.getSiteName());assertEquals("",view.getSiteLogo());
         assertEquals("用户网站",view.getUserSiteName());assertEquals("/user-logo.svg",view.getUserSiteLogo());assertEquals("",view.getUserSiteIcon());
         values.remove("user.site.name");values.remove("user.site.logo");
-        assertEquals("token系统",service.getPublicSettings().getUserSiteName());assertEquals("",service.getPublicSettings().getUserSiteLogo());
+        assertEquals("Tensor AI",service.getPublicSettings().getUserSiteName());assertEquals("",service.getPublicSettings().getUserSiteLogo());
         var request=new SystemSettingsUpdateRequest();request.setUserSiteLogo("javascript:alert(1)");
         assertThrows(BusinessException.class,()->service.updateSettings(request,1));
     }

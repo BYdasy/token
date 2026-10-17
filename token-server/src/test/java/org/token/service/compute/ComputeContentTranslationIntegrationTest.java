@@ -353,7 +353,7 @@ class ComputeContentTranslationIntegrationTest {
         body.put("translations",translation.formTask("PRODUCT",taskId(productTask),1).get("translations"));var product=catalog.save("products",body);
         assertTrue((Boolean)product.get("englishReady"));assertTrue(ComputeData.enabled(product.get("enabled")));assertEquals("/token/product.png",product.get("imageUrl"));
         var localized=(List<Map<String,Object>>)catalog.catalog("es").get("products");assertEquals("Hello",localized.get(0).get("name"));assertEquals("en",localized.get(0).get("translationLanguage"));
-        var home=catalog.homeCatalog("en");assertFalse(home.containsKey("levels"));assertEquals(1,((List<?>)home.get("products")).size());
+        var home=catalog.homeCatalog("en");assertFalse(home.containsKey("levels"));assertTrue(((List<?>)home.get("products")).isEmpty());assertTrue(((List<?>)home.get("models")).isEmpty());
         var level=new LinkedHashMap<String,Object>(Map.of("name","中文标题","description","<p>你好 {name}</p>","threshold","100","enabled",true,"imageUrl","/token/tier.png"));
         level.put("translations",translation.formTask("LEVEL",taskId(levelTask),1).get("translations"));assertTrue((Boolean)catalog.save("levels",level).get("englishReady"));
         level.put("imageUrl","javascript:alert(1)");assertThrows(BusinessException.class,()->catalog.save("levels",level));

@@ -5,10 +5,8 @@ import type { Amount, WalletType } from './types';
 /** 服务端生成的展示快照，仅用于平台运行概览。 */
 export interface RuntimeSample {
   at: string;
-  activeNodes: Amount;
-  runningPools: Amount;
-  consumed: Amount;
-  utilizationPercent: Amount;
+  exaflops: Amount;
+  onlineGpus: Amount;
 }
 
 export interface UiPresentationConfig {
@@ -21,15 +19,12 @@ export interface UiPresentationConfig {
   runtime: {
     enabled: boolean;
     simulated: boolean;
-    totalNodes: Amount;
-    activeNodes: Amount;
-    totalPools: Amount;
-    runningPools: Amount;
-    capacity: Amount;
-    consumed: Amount;
-    utilizationPercent: Amount;
+    totalExaflops: Amount;
+    exaflops: Amount;
+    onlineGpus: Amount;
     mode?: 'AUTO' | 'MANUAL';
     refreshSeconds?: number;
+    changeSeconds?: number;
     updatedAt?: string;
     nextUpdateAt?: string;
     sampleSeconds?: number;

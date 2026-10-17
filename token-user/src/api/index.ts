@@ -31,19 +31,20 @@ export async function request<T>(
   body?: unknown,
   signal?: AbortSignal,
   background = false,
-  responseType: 'json' | 'pdf' = 'json'
+  responseType: 'json' | 'pdf' | 'video' = 'json'
 ): Promise<T> {
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (signal?.aborted) abort();
   else signal?.addEventListener("abort", abort, { once: true });
-  const timeout = window.setTimeout(() => controller.abort(), responseType === 'pdf' ? 60000 : 20000);
+  const timeout = window.setTimeout(() => controller.abort(), responseType === 'video' ? 120000 : responseType === 'pdf' ? 60000 : 20000);
   try {
     const anonymous =
       path.startsWith("/auth/") ||
       path.startsWith("/public/bootstrap") ||
       /^\/public\/legal\/(terms|privacy)(?:\?|$)/.test(path) ||
       path === "/public/runtime" ||
+      path === "/public/company-videos" ||
       path.startsWith("/public/home");
     const token = anonymous
       ? null
@@ -76,11 +77,32 @@ export async function request<T>(
     if (response.ok && responseType === 'pdf' && response.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase() === 'application/pdf') {
       return await response.arrayBuffer() as T;
     }
+    if (response.ok && responseType === 'video') {
+      if (!['video/mp4', 'video/webm'].includes(response.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase() || '')) {
+        await response.body?.cancel(); throw new ApiError(i18n.global.t('user.tensor.video.failed'));
+      }
+      const limit = 100 * 1024 * 1024;
+      if (Number(response.headers.get('Content-Length')) > limit) { await response.body?.cancel(); throw new ApiError(i18n.global.t('user.tensor.video.failed')); }
+      const reader = response.body?.getReader();
+      if (!reader) throw new ApiError(i18n.global.t('user.tensor.video.failed'));
+      const chunks: Uint8Array<ArrayBuffer>[] = []; let length = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          length += value.byteLength;
+          if (length > limit) { await reader.cancel(); throw new ApiError(i18n.global.t('user.tensor.video.failed')); }
+          chunks.push(new Uint8Array(value));
+        }
+      } finally { reader.releaseLock(); }
+      if (!length) throw new ApiError(i18n.global.t('user.tensor.video.failed'));
+      return new Blob(chunks, { type: response.headers.get('Content-Type')!.split(';')[0] }) as T;
+    }
     const data = await response.json().catch((cause) => {
       if (controller.signal.aborted) throw cause;
       return null;
     });
-    if (!response.ok || !data || data.code !== 0 || responseType === 'pdf')
+    if (!response.ok || !data || data.code !== 0 || responseType !== 'json')
       throw new ApiError(
         data?.message || i18n.global.t("user.error.request"),
         data?.code || response.status,

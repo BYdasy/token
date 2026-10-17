@@ -26,7 +26,7 @@ export const overridesPreferences = defineOverridesPreferences({
     mode: 'auto',
   },
   copyright: {
-    companyName: 'duotaivora',
+    companyName: 'Tensor AI',
     companySiteLink: '/',
     date: '2026',
     enable: false,
@@ -34,7 +34,7 @@ export const overridesPreferences = defineOverridesPreferences({
     icpLink: '',
   },
   logo: {
-    source: `${appBaseUrl}exp-logo.svg`,
-    sourceDark: `${appBaseUrl}exp-logo.svg`,
+    source: `${appBaseUrl}exp-logo.svg?v=20261018-tensor-ai`,
+    sourceDark: `${appBaseUrl}exp-logo.svg?v=20261018-tensor-ai`,
   },
 });

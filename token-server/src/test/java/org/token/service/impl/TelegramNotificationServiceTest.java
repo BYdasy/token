@@ -7,6 +7,8 @@ import org.token.model.entity.NotificationTelegramBinding;
 import org.token.model.entity.NotificationTemplate;
 import org.token.model.request.notification.TelegramBindingSaveRequest;
 import org.token.model.request.notification.TelegramTemplateSendRequest;
+import org.token.model.request.notification.TelegramTemplatePreviewRequest;
+import org.token.model.request.notification.TelegramTemplateTestRequest;
 import org.token.repository.system.*;
 import org.token.service.NotificationConfigService;
 import org.token.service.compute.ComputeAgentScope;
@@ -144,6 +146,65 @@ class TelegramNotificationServiceTest {
         assertEquals(created.getCreatedAt(), updated.getCreatedAt());
         assertEquals(created.getChatId(), updated.getChatId());
         verifyNoInteractions(config);
+    }
+
+    @Test void templatePreviewUsesTheExactSelectedIdAndDoesNotSendAnything() {
+        var selected = testTemplate();
+        var request = new TelegramTemplatePreviewRequest(12L, Map.of("name", "Sample"), "en");
+        when(renderer.preview(selected, "en", request.variables())).thenReturn(new NotificationTemplateRenderer.Preview(
+                new NotificationTemplateRenderer.Rendered("Preview", "<p>First</p><p>Second<script>bad()</script></p>", "TELEGRAM"), List.of("name")));
+        var preview = service.previewTemplate(request, "zh");
+        assertEquals("[TEST] Preview", preview.title());
+        assertEquals("First<br>Second", preview.content());
+        assertEquals(List.of("name"), preview.variables());
+        verify(templates).getById(12L);
+        verify(renderer).preview(selected, "en", request.variables());
+        verify(renderer, never()).render(anyString(), any(), any());
+        verifyNoInteractions(config, bindings, channels, scope);
+    }
+
+    @Test void singleTemplateTestCannotBroadcastAndKeepsTheSelectedBindingOnly() {
+        var selected = testTemplate();
+        var template = new TelegramTemplatePreviewRequest(12L, Map.of("name", "Sample"), "en");
+        when(renderer.preview(selected, "en", template.variables())).thenReturn(new NotificationTemplateRenderer.Preview(
+                new NotificationTemplateRenderer.Rendered("Title", "<b>Sample</b>", "TELEGRAM"), List.of("name")));
+        assertEquals(1, service.testTemplate(new TelegramTemplateTestRequest(template, 1L, 7L), "zh"));
+        verify(config).sendTelegramExternal(1L, "[TEST] Title", "<b>Sample</b>", "-10012345678901234567", "en");
+        verifyNoInteractions(scope);
+        verifyNoMoreInteractions(config);
+    }
+
+    @Test void singleTemplateTestRejectsMissingVariablesAndInvalidRecipientBeforeSending() {
+        var selected = testTemplate();
+        when(renderer.preview(eq(selected), eq("en"), anyMap())).thenReturn(new NotificationTemplateRenderer.Preview(
+                new NotificationTemplateRenderer.Rendered("Title", "Body", "TELEGRAM"), List.of("name")));
+        assertThrows(BusinessException.class, () -> service.testTemplate(new TelegramTemplateTestRequest(
+                new TelegramTemplatePreviewRequest(12L, Map.of(), "en"), 1L, 7L), "en"));
+        var template = new TelegramTemplatePreviewRequest(12L, Map.of("name", "Sample"), "en");
+        for (Long bindingId : List.of(0L, 99L))
+            assertThrows(BusinessException.class, () -> service.testTemplate(new TelegramTemplateTestRequest(template, 1L, bindingId), "en"));
+        when(channels.getById(1L)).thenReturn(channel(1L, "TELEGRAM", 0));
+        assertThrows(BusinessException.class, () -> service.testTemplate(new TelegramTemplateTestRequest(template, 1L, 7L), "en"));
+        verifyNoInteractions(config);
+    }
+
+    @Test void templateTestRejectsDisabledForeignAndMalformedTemplates() {
+        var selected = testTemplate();
+        var template = new TelegramTemplatePreviewRequest(12L, Map.of(), "en");
+        selected.setEnabled(0);
+        assertThrows(BusinessException.class, () -> service.previewTemplate(template, "en"));
+        selected.setEnabled(1); selected.setChannelType("INTERNAL");
+        assertThrows(BusinessException.class, () -> service.previewTemplate(template, "en"));
+        assertThrows(BusinessException.class, () -> service.previewTemplate(new TelegramTemplatePreviewRequest(12L, Map.of("bad-key", "Sample"), "en"), "en"));
+        assertThrows(BusinessException.class, () -> service.previewTemplate(new TelegramTemplatePreviewRequest(12L, Map.of("name", "x".repeat(2001)), "en"), "en"));
+        assertThrows(BusinessException.class, () -> service.previewTemplate(new TelegramTemplatePreviewRequest(12L, Map.of(), "invalid language"), "en"));
+        verifyNoInteractions(renderer, config);
+    }
+
+    private NotificationTemplate testTemplate() {
+        var selected = new NotificationTemplate(); selected.setId(12L); selected.setCode("SAVED"); selected.setChannelType("TELEGRAM"); selected.setEnabled(1);
+        when(templates.getById(12L)).thenReturn(selected);
+        return selected;
     }
 
     static NotificationChannelConfig channel(Long id, String type, int enabled) {

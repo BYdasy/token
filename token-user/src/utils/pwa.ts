@@ -44,7 +44,7 @@ function headLink(rel: string) {
 export function updatePwaBranding(brand: { siteName?: string; siteIcon?: string }) {
   const base = new URL(import.meta.env.BASE_URL, window.location.origin);
   const publicUrl = (file: string) => new URL(file, base).href;
-  const name = brand.siteName?.trim() || document.title || 'AI Vora';
+  const name = brand.siteName?.trim() || document.title || 'Tensor AI';
   let configuredIcon = '';
   try {
     const source = imageSource(brand.siteIcon?.trim());

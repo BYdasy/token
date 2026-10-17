@@ -164,6 +164,7 @@ export interface Catalog {
   levels: Level[];
 }
 export interface HomeSummary {
+  partners?: { id: number; code: string; name: string; imageUrl: string }[];
   homePopups?: import("./content").PlatformContent[];
   summaryCurrency: string;
   products: Product[];

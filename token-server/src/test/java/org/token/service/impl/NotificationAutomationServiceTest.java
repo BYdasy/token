@@ -145,6 +145,33 @@ class NotificationAutomationServiceTest {
         var invalid=rules();invalid.get("largeDeposit").put("severity","html");
         assertThrows(BusinessException.class,()->service.save(Map.of("version",0,"rules",invalid)));
     }
+    @Test void exactBigintSourceKeysKeepNonNumericEventsSeparateAndExcludeOnlyCompletedOrders() {
+        enable("largeDeposit");
+        long first=9007199254740992L,second=9007199254740993L;
+        deposit(first,1,"APPROVED",2,"USD",1000,"CURRENT_TIMESTAMP","CURRENT_TIMESTAMP");
+        deposit(second,1,"APPROVED",2,"USD",1000,"CURRENT_TIMESTAMP","CURRENT_TIMESTAMP");
+        f.repository.claim("largeDeposit",String.valueOf(first),"EVENT",org.token.repository.compute.ComputeData.now());
+        f.repository.claim("largeDeposit",second+":energy-identity","EVENT",org.token.repository.compute.ComputeData.now());
+        assertEquals(List.of(second),candidates("largeDeposit").stream().map(row->((Number)row.get("id")).longValue()).toList());
+        service.scan();service.scan();
+        verify(notifications,times(1)).sendPopup(eq(1),any(),any(),any());
+        assertTrue(candidates("largeDeposit").isEmpty());
+    }
+    @Test void moreThanOneBatchIsProcessedWithoutReplayingEarlierOrders() {
+        enable("largeDeposit");
+        for(int id=1;id<=105;id++)deposit(id,1,"APPROVED",2,"USD",1000,"CURRENT_TIMESTAMP","CURRENT_TIMESTAMP");
+        service.scan();assertEquals(5,candidates("largeDeposit").size());
+        service.scan();service.scan();
+        verify(notifications,times(105)).sendPopup(eq(1),any(),any(),any());
+        assertEquals(105,f.jdbc.queryForObject("SELECT COUNT(*) FROM notification_event_delivery WHERE target_key='EVENT'",Integer.class));
+    }
+    @Test void diagnosticDetailsKeepSqlAndExternalCredentialsOutOfLogs() {
+        var sql=new java.sql.SQLException("secret SQL and parameters bot-token", "HY000",1267);
+        var wrapped=new IllegalStateException("private wrapper content",sql);
+        assertEquals("分类=DATABASE；SQLState=HY000；数据库码=1267；异常=SQLException",NotificationAutomationService.failureDetails(wrapped));
+        assertEquals("分类=BUSINESS；异常=BusinessException；业务键=server.notification.channel.disabled",NotificationAutomationService.failureDetails(new BusinessException("server.notification.channel.disabled")));
+        assertEquals("分类=RUNTIME；异常=IllegalStateException",NotificationAutomationService.failureDetails(new IllegalStateException("https://secret-token/credentials")));
+    }
     private static Map<String,Object> energy(String status,String balance){return Map.of("status",status,"configured",true,"enabled",true,"balance_trx",balance,"provider_id","provider-a","mode","GLOBAL","name","Provider A","recharge_address","public-address");}
     private List<Map<String,Object>> candidates(String event){
         var now=org.token.repository.compute.ComputeData.now();

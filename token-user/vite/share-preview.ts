@@ -20,9 +20,9 @@ interface SharePreviewOptions {
   timeoutMs?: number;
 }
 
-const defaults: SharePreviewSnapshot = { userSiteName: 'duotaivora', siteUrl: 'https://duotaivora.com/' };
-const begin = '<!-- duotaivora:share-preview -->';
-const end = '<!-- /duotaivora:share-preview -->';
+const defaults: SharePreviewSnapshot = { userSiteName: 'Tensor AI' };
+const begin = '<!-- tensor-ai:share-preview -->';
+const end = '<!-- /tensor-ai:share-preview -->';
 const maxBytes = 65_536;
 
 function text(value: unknown, max = 2048) {
@@ -62,8 +62,8 @@ function escape(value: string) {
 }
 
 function siteAddress(current: SharePreviewSnapshot, base: string, override?: string) {
-  const url = publicUrl(override) || publicUrl(current.userShareEntryUrl) || publicUrl(current.siteUrl)
-    || publicUrl(defaults.siteUrl)!;
+  const url = publicUrl(override) || publicUrl(current.userShareEntryUrl) || publicUrl(current.siteUrl);
+  if (!url) return undefined;
   url.search = '';
   // BASE_URL影响部署路径，绝不能把CDN资产域名作为用户站地址。
   const basePath = base.startsWith('http://') || base.startsWith('https://') ? new URL(base).pathname : base;
@@ -80,18 +80,18 @@ export function renderSharePreviewHtml(html: string, current: SharePreviewSnapsh
   const description = text(current.userShareDescription, 2000) || title;
   const configuredImage = text(current.userShareImage);
   let image: URL | undefined;
-  if (configuredImage.startsWith('/') && !configuredImage.startsWith('//') && !configuredImage.includes('\\')) {
+  if (site && configuredImage.startsWith('/') && !configuredImage.startsWith('//') && !configuredImage.includes('\\')) {
     image = publicUrl(new URL(configuredImage, site).href);
   } else image = publicUrl(configuredImage);
-  image ||= new URL('brand.png?v=20261008', site);
+  if (!image && site) image = new URL('brand.png?v=20261018-tensor-ai', site);
   const tags = [
     ['name', 'description', description], ['property', 'og:type', 'website'],
     ['property', 'og:site_name', siteName], ['property', 'og:title', title],
     ['property', 'og:description', description],
-    ['property', 'og:image', image.href], ['property', 'og:image:alt', title],
+    ...(image ? [['property', 'og:image', image.href], ['property', 'og:image:alt', title]] : []),
     ['name', 'twitter:card', 'summary_large_image'], ['name', 'twitter:title', title],
-    ['name', 'twitter:description', description], ['name', 'twitter:image', image.href],
-    ['name', 'twitter:image:alt', title],
+    ['name', 'twitter:description', description],
+    ...(image ? [['name', 'twitter:image', image.href], ['name', 'twitter:image:alt', title]] : []),
   ].map(([attribute, name, value]) => `    <meta ${attribute}="${name}" content="${escape(value!)}" />`).join('\n');
   const clean = html.replace(new RegExp(`${begin}[\\s\\S]*?${end}\\s*`, 'g'), '')
     .replace(/<title\b[^>]*>[\s\S]*?<\/title\s*>/gi, '');
@@ -146,7 +146,7 @@ export function sharePreviewPlugin(options: SharePreviewOptions): Plugin {
     catch { return reserved; }
   };
   return {
-    name: 'duotaivora-static-share-preview',
+    name: 'tensor-ai-static-share-preview',
     configResolved(config) { base = config.base; current ||= load(); },
     transformIndexHtml: { order: 'post', async handler(html) {
       current ||= load();

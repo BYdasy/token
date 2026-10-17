@@ -294,9 +294,9 @@ CREATE TABLE `compute_checkin` (
 
 CREATE TABLE `compute_company_file` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '公司文件编号',
-  `file_name` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '用户可见的PDF文件名，不作为磁盘路径',
+  `file_name` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '公司资源原始名称，不作为磁盘路径',
   `stored_name` varchar(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '随机私有存储文件名，仅服务端使用',
-  `file_size` bigint(20) unsigned NOT NULL COMMENT '已验证PDF文件大小，单位字节',
+  `file_size` bigint(20) unsigned NOT NULL COMMENT '已验证文件大小，单位字节；外链为0',
   `enabled` tinyint(3) unsigned NOT NULL DEFAULT '1' COMMENT '是否启用，1启用0停用；停用保留文件',
   `sort_no` int(10) unsigned NOT NULL DEFAULT '0' COMMENT '展示排序，升序；同序按编号升序',
   `version` bigint(20) unsigned NOT NULL DEFAULT '1' COMMENT '编辑版本号，用于并发更新复核',
@@ -304,13 +304,16 @@ CREATE TABLE `compute_company_file` (
   `updated_by` int(10) unsigned NOT NULL COMMENT '最后编辑管理员编号，仅用于审计',
   `created_at` datetime(6) NOT NULL COMMENT '上传时间UTC',
   `updated_at` datetime(6) NOT NULL COMMENT '最近编辑时间UTC',
-  `resource_type` varchar(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'PDF' COMMENT '公司资源类型：PDF私有文件或LINK外部链接',
-  `external_url` varchar(2000) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '外部HTTP(S)链接，仅LINK使用，不由服务端下载',
+  `resource_type` varchar(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'PDF' COMMENT '公司资源类型：PDF文件、LINK网页、VIDEO视频文件、VIDEO_LINK视频链接',
+  `external_url` varchar(2000) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '外部链接，仅LINK和VIDEO_LINK使用，不由服务端下载',
   `names_json` json DEFAULT NULL COMMENT '公司资源多语言显示名称，语言代码到名称的映射，缺失回退原文件名',
+  `homepage` tinyint(3) unsigned NOT NULL DEFAULT '0' COMMENT '是否明确发布至游客首页，仅视频可启用，1是0否',
+  `mime_type` varchar(40) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT '经服务端验证的视频或PDF MIME；网页及嵌入平台链接为空',
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE KEY `uk_compute_company_file_storage` (`stored_name`) USING BTREE COMMENT '随机存储名称不可重复',
-  KEY `idx_compute_company_file_visible` (`enabled`,`sort_no`,`id`) USING BTREE COMMENT '启用公司文件有序读取'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='公司PDF文件目录，私有存储并按实时启停状态授权读取';
+  KEY `idx_compute_company_file_visible` (`enabled`,`sort_no`,`id`) USING BTREE COMMENT '启用公司文件有序读取',
+  KEY `idx_company_home_video` (`enabled`,`homepage`,`resource_type`,`sort_no`,`id`) USING BTREE COMMENT '首页已发布启用视频有序读取'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC COMMENT='公司资源目录，文件私有存储，视频按明确首页发布状态开放';
 
 CREATE TABLE `compute_content` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '记录编号',

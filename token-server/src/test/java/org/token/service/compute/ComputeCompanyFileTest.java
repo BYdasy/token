@@ -79,7 +79,7 @@ class ComputeCompanyFileTest {
         assertEquals(true, saved.get("enabled"));
         assertEquals(1, files());
         var listing = service.userList();
-        assertEquals(Set.of("id", "fileName", "size", "url", "resourceType"), listing.get(0).keySet());
+        assertEquals(Set.of("id", "fileName", "size", "url", "resourceType", "mimeType", "homepage", "playbackType"), listing.get(0).keySet());
         assertEquals("/api/compute/user/company-files/" + saved.get("id") + "/pdf", listing.get(0).get("url"));
         String stored = jdbc.queryForObject("SELECT stored_name FROM compute_company_file", String.class);
         assertTrue(stored.matches("company_[a-f0-9]{32}\\.pdf"));
@@ -288,5 +288,110 @@ class ComputeCompanyFileTest {
         doThrow(ComputeAgentScope.denied()).when(scope).requireGlobalScope();
         assertThrows(BusinessException.class, () -> service.createLink(Map.of("fileName", "公司文档", "externalUrl", "https://example.org/a")));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM compute_company_file", Integer.class));
+    }
+
+    static final byte[] MP4 = java.util.HexFormat.of().parseHex("000000186674797069736F6D0000020069736F6D6D703432000000086D646174");
+    static final byte[] WEBM = java.util.HexFormat.of().parseHex("1A45DFA3874282847765626D1853806780");
+
+    @Test void videoUploadIsPrivateUntilExplicitlyPublishedAndUsesVerifiedMime() throws Exception {
+        var saved = service.upload(new MockMultipartFile("file", "介绍.mp4", "video/mp4", MP4));
+        long savedId = id(saved);
+        assertEquals("VIDEO", saved.get("resourceType"));
+        assertEquals(false, saved.get("homepage"));
+        assertTrue(service.homepageVideos("zh").isEmpty());
+        assertThrows(BusinessException.class, () -> service.video(savedId, false, true));
+        var response = service.video(id(saved), false, false);
+        assertEquals("video/mp4", response.getHeaders().getContentType().toString());
+        assertEquals("bytes", response.getHeaders().getFirst("Accept-Ranges"));
+        assertEquals("private, no-store", response.getHeaders().getCacheControl());
+        try (var stream = response.getBody().getInputStream()) { assertArrayEquals(MP4, stream.readAllBytes()); }
+        var update = new HashMap<>(edit(saved, "介绍.mp4", true, 0)); update.put("homepage", true);
+        saved = service.update(id(saved), update);
+        var published = service.homepageVideos("zh").get(0);
+        assertEquals("/api/compute/public/company-videos/" + id(saved) + "/video", published.get("url"));
+        assertEquals(Set.of("id", "fileName", "resourceType", "url", "playbackType", "mimeType"), published.keySet());
+        assertNotNull(service.video(id(saved), false, true).getBody());
+        service.update(id(saved), edit(saved, "介绍.mp4", false, 0));
+        assertTrue(service.homepageVideos("zh").isEmpty());
+        assertThrows(BusinessException.class, () -> service.video(savedId, false, true));
+        assertThrows(BusinessException.class, () -> service.video(savedId, false, false));
+        assertNotNull(service.video(savedId, true, false).getBody());
+    }
+
+    @Test void webmIsVerifiedAndFileTypeCannotBeChangedByRenamingOrEditingMetadata() {
+        var saved = service.upload(new MockMultipartFile("file", "介绍.webm", "video/webm", WEBM));
+        assertEquals("video/webm", service.video(id(saved), false, false).getHeaders().getContentType().toString());
+        assertThrows(BusinessException.class, () -> service.update(id(saved), edit(saved, "改格式.mp4", true, 0)));
+        var update = new HashMap<>(edit(saved, "介绍.webm", true, 0)); update.put("resourceType", "PDF");
+        assertThrows(BusinessException.class, () -> service.update(id(saved), update));
+        assertThrows(BusinessException.class, () -> service.pdf(id(saved), false));
+    }
+
+    @Test void ordinaryDocumentsCannotBePublishedOrUsedAsVideoThroughAnIdGuess() {
+        var pdf = service.upload(pdf("私有.pdf"));
+        var link = service.createLink(Map.of("fileName", "普通网页", "externalUrl", "https://example.org/watch"));
+        for (var saved : List.of(pdf, link)) {
+            var input = new HashMap<>(edit(saved, saved.get("fileName").toString(), true, 0)); input.put("homepage", true);
+            assertThrows(BusinessException.class, () -> service.update(id(saved), input));
+            assertThrows(BusinessException.class, () -> service.video(id(saved), false, true));
+            assertThrows(BusinessException.class, () -> service.video(id(saved), true, false));
+        }
+        assertTrue(service.homepageVideos("en").isEmpty());
+        // 即使绕过应用写入错误发布标记，公共查询仍按视频类型隔离旧文档。
+        jdbc.update("UPDATE compute_company_file SET homepage=1");
+        assertTrue(service.homepageVideos("en").isEmpty());
+    }
+
+    @Test void videoLinksUseTheSameTranslationVersionAndPublicationControlsWithoutDownloading() throws Exception {
+        var saved = service.createVideoLink(Map.of("fileName", "公司视频", "externalUrl", "https://youtu.be/dQw4w9WgXcQ?si=tracking", "homepage", true,
+                "names", Map.of("zh", "公司视频", "en", "Company video")));
+        assertEquals("VIDEO_LINK", saved.get("resourceType"));
+        assertEquals("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ", saved.get("embedUrl"));
+        assertEquals("Company video", service.homepageVideos("en").get(0).get("fileName"));
+        assertEquals(0, files());
+        assertThrows(BusinessException.class, () -> service.video(id(saved), false, true));
+        var input = new HashMap<>(edit(saved, "公司视频", true, 0)); input.put("homepage", false);
+        service.update(id(saved), input);
+        assertTrue(service.homepageVideos("en").isEmpty());
+        assertEquals(1, service.userList("en").size());
+        assertThrows(BusinessException.class, () -> service.update(id(saved), input));
+    }
+
+    @Test void invalidVideoHeadersMimeAndOversizedDeclarationsNeverPersistFiles() throws Exception {
+        for (var file : List.of(new MockMultipartFile("file", "假.mp4", "video/mp4", PDF),
+                new MockMultipartFile("file", "假.webm", "video/webm", MP4),
+                new MockMultipartFile("file", "假.mp4", "text/html", MP4),
+                new MockMultipartFile("file", "../假.mp4", "video/mp4", MP4),
+                new MockMultipartFile("file", "假.webm", "video/webm", java.util.HexFormat.of().parseHex("1A45DFA38B4282886D6174726F736B61")))) {
+            assertThrows(BusinessException.class, () -> service.upload(file));
+        }
+        var oversized = new MockMultipartFile("file", "超大.mp4", "video/mp4", MP4) {
+            @Override public long getSize() { return ComputeCompanyFileStorage.MAX_VIDEO_BYTES + 1; }
+        };
+        assertEquals("server.compute.companyFile.videoTooLarge", assertThrows(BusinessException.class, () -> service.upload(oversized)).getMessage());
+        assertEquals(0, files());
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM compute_company_file", Integer.class));
+    }
+
+    @Test void actualMultipartLimitsAreReportedAndCappedByVideoPolicy() {
+        var properties = new org.springframework.boot.autoconfigure.web.servlet.MultipartProperties();
+        properties.setMaxFileSize(org.springframework.util.unit.DataSize.ofMegabytes(50));
+        properties.setMaxRequestSize(org.springframework.util.unit.DataSize.ofMegabytes(50));
+        var configured = new ComputeCompanyFileStorage(properties);
+        assertEquals(49L * 1024 * 1024, configured.maxVideoBytes());
+        assertEquals(20L * 1024 * 1024, configured.maxPdfBytes());
+        properties.setMaxFileSize(org.springframework.util.unit.DataSize.ofMegabytes(200));
+        properties.setMaxRequestSize(org.springframework.util.unit.DataSize.ofMegabytes(200));
+        assertEquals(100L * 1024 * 1024, new ComputeCompanyFileStorage(properties).maxVideoBytes());
+    }
+
+    @Test void restrictedAdministratorCannotPublishReadOrCreateVideoLinks() {
+        var saved = service.upload(new MockMultipartFile("file", "视频.mp4", "video/mp4", MP4));
+        doThrow(ComputeAgentScope.denied()).when(scope).requireGlobalScope();
+        assertThrows(BusinessException.class, () -> service.video(id(saved), true, false));
+        assertThrows(BusinessException.class, () -> service.createVideoLink(Map.of("fileName", "视频", "externalUrl", "https://example.org/a.mp4")));
+        var input = new HashMap<>(edit(saved, "视频.mp4", true, 0)); input.put("homepage", true);
+        assertThrows(BusinessException.class, () -> service.update(id(saved), input));
+        assertTrue(service.homepageVideos("en").isEmpty());
     }
 }

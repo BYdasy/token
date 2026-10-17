@@ -315,6 +315,24 @@ export function fetchNotificationChannels() {
   );
 }
 
+export interface NotificationConfigPageQuery {
+  current?: number;
+  size?: number;
+  keyword?: string;
+  channelType?: string;
+}
+
+export async function fetchNotificationChannelPage(query: NotificationConfigPageQuery = {}) {
+  const data = await requestClient.post<any>('/system/notification-config/channel/page', query);
+  return normalizePage<NotificationChannel>(data);
+}
+
+export function fetchNotificationChannelOptions() {
+  return requestClient.post<{ id: number; name: string; channelType: string }[]>(
+    '/system/notification-config/channel/options',
+  );
+}
+
 export function inspectTelegramChannel(id: number) {
   return requestClient.post<NotificationChannel>('/system/notification-config/telegram/inspect', { id });
 }
@@ -365,6 +383,11 @@ export function fetchNotificationTemplates() {
   return requestClient.post<NotificationTemplate[]>(
     '/system/notification-config/template/list',
   );
+}
+
+export async function fetchNotificationTemplatePage(query: NotificationConfigPageQuery = {}) {
+  const data = await requestClient.post<any>('/system/notification-config/template/page', query);
+  return normalizePage<NotificationTemplate>(data);
 }
 
 export function fetchNotificationTemplateLanguages() {

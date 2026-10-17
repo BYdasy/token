@@ -15,6 +15,7 @@ import org.token.custom.web.RequestTimeZoneFilter;
 import org.token.config.compute.ComputeSecurityConfig;
 import org.token.controller.admin.ComputeCompanyFileAdminController;
 import org.token.controller.user.ComputeCompanyFileUserController;
+import org.token.controller.publicapi.ComputeCompanyVideoPublicController;
 import org.token.controller.admin.ComputeFormTranslationController;
 import org.token.service.compute.ComputeAccountService;
 import org.token.service.compute.ComputeCompanyFileService;
@@ -46,7 +47,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /** 使用真实双安全链与方法授权，服务/会话均隔离，不读取真实数据库与存储。 */
-@WebMvcTest({ComputeCompanyFileAdminController.class, ComputeCompanyFileUserController.class, ComputeFormTranslationController.class})
+@WebMvcTest({ComputeCompanyFileAdminController.class, ComputeCompanyFileUserController.class, ComputeCompanyVideoPublicController.class, ComputeFormTranslationController.class})
 @Import({ComputeSecurityConfig.class, SecurityConfig.class, org.token.service.compute.ComputeFormTranslationService.class})
 @Tag("regression")
 class ComputeCompanyFileSecurityTest {
@@ -95,7 +96,7 @@ class ComputeCompanyFileSecurityTest {
     }
 
     @Test void listAndPdfRequireRealMemberCredentialsAndNeverAcceptAdministratorBearer() throws Exception {
-        for (String path : List.of("/api/compute/user/company-files", "/api/compute/user/company-files/1/pdf")) {
+        for (String path : List.of("/api/compute/user/company-files", "/api/compute/user/company-files/1/pdf", "/api/compute/user/company-files/1/video")) {
             mvc.perform(get(path)).andExpect(status().isUnauthorized());
             mvc.perform(get(path).header("Authorization", "Bearer admin-token")).andExpect(status().isUnauthorized());
         }
@@ -172,5 +173,59 @@ class ComputeCompanyFileSecurityTest {
         mvc.perform(get("/api/compute/admin/translation-forms/COMPANY_FILE/12")).andExpect(status().isOk());
         verify(translations).submitForm(eq("COMPANY_FILE"), anyMap(), eq(9));
         verify(translations).formTask("COMPANY_FILE", 12, 9);
+    }
+
+    @Test void homepageVideoReadsArePublicEvenWithExpiredCredentialsButPrivateDocumentsAndWritesAreNot() throws Exception {
+        when(files.homepageVideos(anyString())).thenReturn(List.of(Map.of("id", 7, "resourceType", "VIDEO")));
+        when(files.video(7, false, true)).thenReturn(ResponseEntity.ok().contentType(MediaType.parseMediaType("video/mp4"))
+                .body(new ByteArrayResource(new byte[]{0, 1, 2, 3})));
+        mvc.perform(get("/api/compute/public/company-videos").header("Authorization", "Bearer expired"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].resourceType").value("VIDEO"));
+        mvc.perform(get("/api/compute/public/company-videos/7/video").header("Authorization", "Bearer expired"))
+                .andExpect(status().isOk()).andExpect(content().contentType("video/mp4"));
+        mvc.perform(get("/api/compute/public/company-videos/7/video").header("Range", "bytes=1-2"))
+                .andExpect(status().isPartialContent()).andExpect(header().string("Content-Range", "bytes 1-2/4"))
+                .andExpect(content().bytes(new byte[]{1, 2}));
+        mvc.perform(head("/api/compute/public/company-videos/7/video")).andExpect(status().isOk()).andExpect(content().bytes(new byte[0]));
+        verify(accounts, never()).authenticate(anyString());
+        verify(accounts, never()).recordSessionActivity(anyString());
+        mvc.perform(get("/api/compute/public/company-videos/7/pdf")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/compute/public/company-videos").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test void videoLinkWritesAndPrivateVideoReadsUseTheExistingExactCompanyPermissions() throws Exception {
+        when(files.createVideoLink(anyMap())).thenReturn(Map.of("id", 8, "resourceType", "VIDEO_LINK"));
+        when(files.video(8, true, false)).thenReturn(ResponseEntity.ok().contentType(MediaType.parseMediaType("video/webm"))
+                .body(new ByteArrayResource(new byte[]{1, 2})));
+        admin("71000");
+        mvc.perform(post("/api/compute/admin/company-files/video-links").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden());
+        admin("20100");
+        mvc.perform(get("/api/compute/admin/company-files/8/video")).andExpect(status().isForbidden());
+        verify(files, never()).createVideoLink(anyMap());
+        verify(files, never()).video(anyLong(), anyBoolean(), anyBoolean());
+        admin("71000");
+        mvc.perform(get("/api/compute/admin/company-files/8/video")).andExpect(status().isOk());
+        for (String permission : List.of("71001", "super")) {
+            admin(permission);
+            mvc.perform(post("/api/compute/admin/company-files/video-links").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.resourceType").value("VIDEO_LINK"));
+        }
+        verify(files, times(2)).createVideoLink(anyMap());
+    }
+
+    @Test void rangeRequestsCannotBypassMemberAuthentication() throws Exception {
+        String url = "/api/compute/user/company-files/7/video";
+        mvc.perform(get(url).header("Range", "bytes=1-2")).andExpect(status().isUnauthorized());
+        mvc.perform(get(url).header("Range", "bytes=1-2").header("Authorization", "Bearer admin-token"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(files);
+        when(files.video(7, false, false)).thenReturn(ResponseEntity.ok().contentType(MediaType.parseMediaType("video/mp4"))
+                .body(new ByteArrayResource(new byte[]{0, 1, 2, 3})));
+        mvc.perform(get(url).header("Range", "bytes=1-2").header("Authorization", "Bearer member-token"))
+                .andExpect(status().isPartialContent()).andExpect(header().string("Content-Range", "bytes 1-2/4"))
+                .andExpect(content().bytes(new byte[]{1, 2}));
+        verify(files).video(7, false, false);
     }
 }

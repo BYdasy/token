@@ -17,16 +17,26 @@ public class NotificationTemplateRenderer {
     private final TranslationRepository translations;
     public NotificationTemplateRenderer(NotificationTemplateRepository templates,TranslationRepository translations){this.templates=templates;this.translations=translations;}
     public record Rendered(String title,String content,String channelType) { }
+    public record Preview(Rendered rendered, List<String> variables) { }
     public List<String> variables(NotificationTemplate template){
+        return variables(template.getTitleTemplate(), template.getContentTemplate());
+    }
+    private List<String> variables(String title, String content) {
         var found=new LinkedHashSet<String>();
-        for(String source:List.of(Objects.toString(template.getTitleTemplate(),""),Objects.toString(template.getContentTemplate(),""))){
+        for(String source:List.of(Objects.toString(title,""),Objects.toString(content,""))){
             var matcher=VARIABLES.matcher(source);while(matcher.find())found.add(matcher.group(1));
         }
         return List.copyOf(found);
     }
     public Rendered render(String code,String language,Map<String,?> variables) {
-        NotificationTemplate template=enabled(code);
-        if(template==null)return null;
+        Preview preview = preview(code, language, variables);
+        return preview == null ? null : preview.rendered();
+    }
+    public Preview preview(String code,String language,Map<String,?> variables) {
+        return preview(enabled(code), language, variables);
+    }
+    public Preview preview(NotificationTemplate template,String language,Map<String,?> variables) {
+        if(template==null || !Integer.valueOf(1).equals(template.getEnabled()))return null;
         int type=switch(template.getChannelType()){case "EMAIL"->2;case "INTERNAL"->3;default->6;};
         String normalized=language==null?"en":language.trim().replace('_','-').toLowerCase(Locale.ROOT);
         var candidates=new LinkedHashSet<String>();
@@ -38,7 +48,7 @@ public class NotificationTemplateRenderer {
         if(title==null)title=template.getTitleTemplate();
         if(content==null)content=template.getContentTemplate();
         boolean html=!"DINGTALK".equals(template.getChannelType());
-        return new Rendered(substitute(title,variables,false),substitute(content,variables,html),template.getChannelType());
+        return new Preview(new Rendered(substitute(title,variables,false),substitute(content,variables,html),template.getChannelType()), variables(title, content));
     }
     public NotificationTemplate enabled(String code) {
         if(code==null||code.isBlank())return null;

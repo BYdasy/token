@@ -56,12 +56,14 @@ public class ComputeMerchantService {
             Map.entry("fee-account", query("service-fee/account/query", false, false)),
             Map.entry("fee-ledger", query("service-fee/ledger/query", true, false, "entry_type", "asset_id", "resource_id", "exclude_topups", "start_time", "end_time")),
             Map.entry("bills", query("merchant-bills/query", true, false, "network_id", "asset_id", "wallet_id", "tx_hash", "direction", "bill_type", "status", "address", "start_time", "end_time")),
-            Map.entry("batches", query("collection-batches/query", false, true, "batch_id", "customer_id", "asset_id", "network_id", "purpose", "status", "sweep_status", "reason_code", "address", "tx_hash", "start_time", "end_time", "view", "receipt_after_id")),
-            Map.entry("sweeps", query("sweeps/query", false, true, "batch_id", "asset_id", "network_id", "status", "reason_code", "tx_hash", "address", "start_time", "end_time")),
+            Map.entry("batches", query("collection-batches/query", true, true, "batch_id", "customer_id", "asset_id", "network_id", "purpose", "status", "sweep_status", "reason_code", "address", "tx_hash", "start_time", "end_time", "view", "receipt_after_id")),
+            Map.entry("sweeps", query("sweeps/query", true, true, "batch_id", "asset_id", "network_id", "status", "reason_code", "tx_hash", "address", "start_time", "end_time")),
             Map.entry("resources", query("resource-orders/query", true, false, "request_id", "operation_id", "provider_order_id", "status", "reason_code", "network_id", "address", "resource_type", "purpose", "start_time", "end_time")),
             Map.entry("notifications", query("notifications/query", true, false)),
             Map.entry("attempts", query("notifications/attempts/query", false, false, "delivery_id")),
             Map.entry("rechecks", query("deposit-rechecks/query", false, true, "recheck_id", "merchant_recheck_id", "asset_id", "network_id", "customer_id")));
+    private static final Map<String,String> PAGE_IDS=Map.of("batches","batch_id","sweeps","operation_id","bills","bill_id",
+            "fee-ledger","entry_id","resources","request_id","notifications","delivery_id");
 
     public Map<String, Object> context() {
         // 此接口只返回入口可用性；代理账号不请求任何全商户资料。
@@ -90,7 +92,10 @@ public class ComputeMerchantService {
         if(reason!=null&&(reason.length()>256||reason.chars().anyMatch(Character::isISOControl)))throw invalid();
         Map<String, Object> body = new LinkedHashMap<>();
         for (String key : query.fields()) optional(body, input, key);
-        if (query.pages()) { body.put("page", integer(input.getOrDefault("page", "1"), 1, 100000)); }
+        // 旧调用的 before_id 保留原游标语义；明确传页码的归集列表使用服务端计数分页。
+        if (query.pages() && (!query.cursor() || (input.containsKey("page") && !input.containsKey("before_id")))) {
+            body.put("page", integer(input.getOrDefault("page", "1"), 1, 100000));
+        }
         if (query.pages() || query.cursor()) body.put("limit", integer(input.getOrDefault("limit", "20"), 1, 100));
         if (resource.equals("bills")) {
             body.remove("limit");
@@ -106,7 +111,7 @@ public class ComputeMerchantService {
             if (body.containsKey("request_id")) { body.remove("page"); body.remove("limit"); }
         }
         if(Set.of("wallets","destinations","fee-account").contains(resource))body.put("view","summary");
-        Map<String, Object> result = client().request(query.operation(), body);
+        Map<String, Object> result = readPage(resource, query, body);
         if (resource.equals("resources") && (result == null || !"CURRENT".equals(result.get("view"))
                 || !(result.get("items") instanceof List<?>)
                 || (body.containsKey("request_id") && !(result.get("request") instanceof Map<?, ?>))))
@@ -116,7 +121,68 @@ public class ComputeMerchantService {
         return Set.of("batches", "rechecks").contains(resource) ? withUsernames(result) : result;
     }
 
-    /** 后台列表只取摘要，详情每次代理一页；资金补偿另行完整核验，不能在此自动聚合。 */
+    /** 大页按真实偏移读取有界的十条小页，避免单次商户报文超限；任一片异常不返回半页。 */
+    private Map<String,Object> readPage(String resource,Query query,Map<String,Object> body) {
+        String sizeField=resource.equals("bills")?"page_size":"limit";
+        int size=body.get(sizeField) instanceof Integer value?value:0;
+        if(!PAGE_IDS.containsKey(resource)||!body.containsKey("page")||body.containsKey("before_id")||size<=20)
+            return client().request(query.operation(),body);
+        int page=(Integer)body.get("page"),chunkSize=10;
+        long offset=(long)(page-1)*size,firstPage=offset/chunkSize+1;
+        int skip=(int)(offset%chunkSize),maxRemotePage=resource.equals("resources")?1000000:100000;
+        if(firstPage>maxRemotePage)throw invalid();
+        ComputeMcagClient gateway=client();
+        List<Map<String,Object>> combined=new ArrayList<>();
+        Set<String> ids=new HashSet<>();
+        Map<String,Object> result=null;
+        long total=-1;int wanted=0,fragments=1;
+        for(int fragment=0;fragment<fragments;fragment++) {
+            int remotePage=Math.toIntExact(firstPage+fragment);
+            var request=new LinkedHashMap<>(body);request.put("page",remotePage);request.put(sizeField,chunkSize);
+            var response=gateway.request(query.operation(),request);
+            if(response==null||!(response.get("items") instanceof List<?> items)
+                    || resource.equals("resources")&&!"CURRENT".equals(response.get("view")))throw invalidPage();
+            long currentTotal=pageNumber(response.get("total"));
+            if(currentTotal<0 || response.containsKey("page")&&pageNumber(response.get("page"))!=remotePage)throw invalidPage();
+            for(String field:List.of("limit","page_size"))
+                if(response.containsKey(field)&&pageNumber(response.get(field))!=chunkSize)throw invalidPage();
+            if(fragment==0) {
+                total=currentTotal;result=new LinkedHashMap<>(response);
+                wanted=(int)Math.min(size,Math.max(0,total-offset));
+                // 任意21..100的合法size也按原偏移裁切，最多11片；空页仍核验一次权威total。
+                fragments=Math.max(1,(skip+wanted+chunkSize-1)/chunkSize);
+                if(firstPage+fragments-1>maxRemotePage)throw invalid();
+            } else if(currentTotal!=total)throw invalidPage();
+            int expected=(int)Math.min(chunkSize,Math.max(0,total-(long)(remotePage-1)*chunkSize));
+            if(items.size()!=expected)throw invalidPage();
+            for(Object value:items) {
+                if(!(value instanceof Map<?,?> row)||!(row.get(PAGE_IDS.get(resource)) instanceof String id)
+                        ||id.isBlank()||!ids.add(id))throw invalidPage();
+                var copy=new LinkedHashMap<String,Object>();
+                for(var entry:row.entrySet()) {
+                    if(!(entry.getKey() instanceof String key))throw invalidPage();
+                    copy.put(key,entry.getValue());
+                }
+                combined.add(copy);
+            }
+        }
+        var items=wanted==0?List.<Map<String,Object>>of():new ArrayList<>(combined.subList(skip,skip+wanted));
+        result.put("items",items);result.put("page",page);result.put(sizeField,size);
+        for(String field:List.of("limit","page_size"))if(result.containsKey(field))result.put(field,size);
+        boolean hasMore=offset+wanted<total;
+        if(result.containsKey("has_more"))result.put("has_more",hasMore);
+        if(result.containsKey("next_cursor"))result.put("next_cursor",hasMore&&!items.isEmpty()?items.get(items.size()-1).get(PAGE_IDS.get(resource)):null);
+        return result;
+    }
+
+    private static long pageNumber(Object value) {
+        if(!(value instanceof Number)&&!(value instanceof String))throw invalidPage();
+        try { return new java.math.BigDecimal(value.toString()).longValueExact(); }
+        catch(NumberFormatException|ArithmeticException failure) {throw invalidPage();}
+    }
+    private static BusinessException invalidPage() {return new BusinessException("server.compute.payment.invalidResponse");}
+
+    /** 后台列表只取摘要，详情每次代理一页；资金补偿另行完整核验，此处不自动合并批次收款明细。 */
     private static void batchPage(Map<String, Object> body, Map<String, String> input) {
         if (body.containsKey("view") && !Set.of("summary", "receipts").contains(body.get("view"))) throw invalid();
         if (!body.containsKey("batch_id")) {
@@ -125,6 +191,7 @@ public class ComputeMerchantService {
             return;
         }
         body.remove("limit");
+        body.remove("page");
         body.remove("before_id");
         body.put("view", "receipts");
         body.put("receipt_limit", integer(input.getOrDefault("receipt_limit", "20"), 1, 50));
@@ -346,23 +413,24 @@ public class ComputeMerchantService {
 
     private Map<String, Object> withUsernames(Map<String, Object> result) {
         if (!(result.get("items") instanceof List<?> items)) return result;
-        Set<Long> ids = new HashSet<>();
-        for (Object value : items) if (value instanceof Map<?, ?> row) { Long id = memberId(row.get("customer_id")); if (id != null) ids.add(id); }
-        Map<Long, String> names = new HashMap<>();
-        if (!ids.isEmpty()) displayNames.memberNames(ids)
-                .forEach(row -> names.put(ComputeData.number(row.get("displayId")), (String) row.get("username")));
+        Set<String> ids = new HashSet<>();
+        for (Object value : items) if (value instanceof Map<?, ?> row) { String id = customerId(row); if (id != null) ids.add(id); }
+        Map<String, String> names = new HashMap<>();
+        if (!ids.isEmpty()) displayNames.merchantCustomerNames(config.getMerchantId(), config.getEnvironment(), ids)
+                .forEach(row -> names.put((String) row.get("customerId"), (String) row.get("username")));
         List<Map<String, Object>> records = new ArrayList<>();
         for (Object value : items) if (value instanceof Map<?, ?> row) {
             Map<String, Object> copy = new LinkedHashMap<>(); row.forEach((key, field) -> copy.put(Objects.toString(key), field));
-            Long id = memberId(row.get("customer_id")); if (id != null && names.containsKey(id)) copy.put("username", names.get(id));
+            copy.remove("username");
+            String id = customerId(row); if (id != null && names.containsKey(id)) copy.put("username", names.get(id));
             records.add(copy);
         }
         Map<String, Object> response = new LinkedHashMap<>(result); response.put("items", records); return response;
     }
-    private static Long memberId(Object customer) {
-        String value = Objects.toString(customer, "");
-        if (!value.matches("token_[0-9]{1,18}_(compute|project|earnings)")) return null;
-        try { return Long.parseLong(value.substring(8, value.lastIndexOf('_'))); } catch (NumberFormatException invalid) { return null; }
+    private String customerId(Map<?, ?> row) {
+        if (row.containsKey("merchant_id") && !Objects.equals(config.getMerchantId(), row.get("merchant_id"))
+                || row.containsKey("environment") && !Objects.equals(config.getEnvironment(), row.get("environment"))) return null;
+        return row.get("customer_id") instanceof String value && !value.isBlank() && value.length() <= 128 ? value : null;
     }
 
     /** 同步只拉取远端当前配置快照；冲突留给管理员处理，不覆写本地费率、映射或平台钱包。 */

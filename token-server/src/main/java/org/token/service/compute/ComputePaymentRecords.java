@@ -57,7 +57,9 @@ final class ComputePaymentRecords {
                 if(!snapshot.containsKey("batch_id")) collectionUnavailable(order,"SYNC_PENDING");
                 else if(batch==null || "".equals(batch)) {
                     order.put("collectionState","NOT_COLLECTED");
-                    order.put("collectionReason","WAITING_BATCH");
+                    // 门槛由网关按同地址资产的可归集总额判断；本地不能按单笔充值额推算。
+                    order.put("collectionReason","BELOW_SWEEP_THRESHOLD".equals(snapshot.get("collection_reason_code"))
+                            ? "BELOW_SWEEP_THRESHOLD" : "WAITING_BATCH");
                 } else if(batch instanceof String batchId && !batchId.isBlank() && batchId.length()<=128
                         && batchId.chars().noneMatch(Character::isISOControl)) {
                     order.put("collectionBatchId",batchId);

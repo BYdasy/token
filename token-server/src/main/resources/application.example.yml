@@ -5,8 +5,8 @@ spring:
     name: token
   servlet:
     multipart:
-      max-file-size: 50MB
-      max-request-size: 50MB
+      max-file-size: 100MB
+      max-request-size: 110MB
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${DB_URL}
@@ -59,7 +59,7 @@ exp:
     trusted-proxies: ${EXP_TRUSTED_PROXIES:127.0.0.1,::1}
     # 多域名统一走本站/api，自动识别同源，无需配置域名来源名单；真正跨域调用拒绝。
   totp:
-    issuer: ${EXP_TOTP_ISSUER:duotaivora}
+    issuer: ${EXP_TOTP_ISSUER:Tensor AI}
     encryption-key: ${EXP_TOTP_ENCRYPTION_KEY}
   image:
     # 普通静态图片统一转换为 WebP；GIF 和视频保持原文件。

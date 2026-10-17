@@ -53,7 +53,7 @@ class ComputePresentationServiceTest {
         jdbc.execute("CREATE TABLE compute_finance_snapshot(business_type VARCHAR(16),business_id BIGINT,member_id BIGINT,usd_amount DECIMAL(38,8),PRIMARY KEY(business_type,business_id))");
     }
     @Test void configurableUnitNameIsPublicPresentationOnlyAndSurvivesOlderForms() {
-        assertEquals("token", service.publicSettings().get("unitName"));
+        assertEquals("USD", service.publicSettings().get("unitName"));
         var config = ComputePresentationService.defaults();
         config.put("unitName", "  Vora Points  ");
         service.save(config);
@@ -64,7 +64,7 @@ class ComputePresentationServiceTest {
         service.save(config);
         assertEquals("Vora Points", service.settings().get("unitName"));
         config.put("unitName", " "); service.save(config);
-        assertEquals("token", service.publicSettings().get("unitName"));
+        assertEquals("USD", service.publicSettings().get("unitName"));
     }
     @Test void invalidDisplayUnitDoesNotWriteConfiguration() {
         for (Object name : List.of("a".repeat(25), "USD\nToken", "<b>USD</b>", "US\u202eD", 123)) {
@@ -188,7 +188,7 @@ class ComputePresentationServiceTest {
     }
     @Test void inconsistentRuntimeAndInvalidPricesAreRejectedBeforeSave() {
         var config = ComputePresentationService.defaults();
-        config.put("runtime", Map.of("mode", "MANUAL", "totalNodes", 10, "activeNodes", 20, "totalPools", 2, "runningPools", 1, "capacity", "10", "consumed", "11"));
+        config.put("runtime", Map.of("mode", "MANUAL", "totalExaflops", "5.0", "exaflops", "5.01", "onlineGpus", 20000));
         assertThrows(BusinessException.class, () -> service.save(config));
         config.put("runtime", ComputePresentationService.defaults().get("runtime"));
         config.put("valuation", Map.of("assetUsdRates", Map.of("UNKNOWN", "2"), "fiatPerUsd", Map.of("USD", "2")));
@@ -198,11 +198,12 @@ class ComputePresentationServiceTest {
     @Test void automaticRuntimeRecalculatesHiddenValuesWhenCapacityIsReduced() {
         var config = ComputePresentationService.defaults();
         var runtime = ComputeRuntimeProjection.defaults();
-        runtime.put("totalNodes", 2); runtime.put("totalPools", 1); runtime.put("capacity", "0.5");
+        runtime.put("totalExaflops", "0.5"); runtime.put("exaflopsMin", "0.2"); runtime.put("exaflopsMax", "0.4");
+        runtime.put("onlineGpusMin", 1); runtime.put("onlineGpusMax", 2);
         config.put("runtime", runtime);
         var saved = (Map<?,?>) service.save(config).get("runtime");
-        assertTrue(((Number)saved.get("activeNodes")).longValue() <= 2);
-        assertTrue(new java.math.BigDecimal(saved.get("consumed").toString()).compareTo(new java.math.BigDecimal("0.5")) <= 0);
+        assertTrue(((Number)saved.get("onlineGpus")).longValue() <= 2);
+        assertTrue(new java.math.BigDecimal(saved.get("exaflops").toString()).compareTo(new java.math.BigDecimal("0.4")) <= 0);
     }
     @Test void publicRuntimeSamplesAreNeverPersistedAsConfiguration() {
         var config = ComputePresentationService.defaults();
@@ -211,13 +212,14 @@ class ComputePresentationServiceTest {
         config.put("runtime", ComputeRuntimeProjection.project(runtime, java.time.Instant.parse("2026-10-17T12:00:00Z")));
         var saved = (Map<?,?>) service.save(config).get("runtime");
         var persisted = (Map<?,?>) data.jsonMap(data.setting(ComputePresentationService.SETTING_KEY, "{}")).get("runtime");
-        for (String field : List.of("samples", "sampleSeconds", "serverTime", "updatedAt", "nextUpdateAt", "simulated", "utilizationPercent")) {
+        for (String field : List.of("samples", "sampleSeconds", "serverTime", "updatedAt", "nextUpdateAt", "simulated", "utilizationPercent", "capacity", "activeNodes")) {
             assertFalse(saved.containsKey(field));
             assertFalse(persisted.containsKey(field));
         }
         var publicRuntime = service.runtime();
         assertFalse(((List<?>) publicRuntime.get("samples")).isEmpty());
         assertEquals(60L, ((Number) persisted.get("refreshSeconds")).longValue());
+        assertEquals(2L, ((Number) persisted.get("changeSeconds")).longValue());
     }
     @Test void unsafeSlidesAndDisabledDefaultLanguagesAreRejected() {
         var config = ComputePresentationService.defaults(); config.put("slides", List.of(Map.of("imageUrl", "javascript:alert(1)", "targetPath", "/home")));

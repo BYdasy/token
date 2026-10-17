@@ -19,7 +19,7 @@ export const useSession = defineStore("token-user-session", () => {
   const languageSyncFailed = ref(false);
   const authenticated = computed(() => Boolean(token.value));
   const siteName = computed(
-    () => config.value?.siteName || "AI Vora"
+    () => config.value?.siteName?.trim() || "Tensor AI"
   );
   let bootstrapPromise: Promise<void> | undefined;
   let memberPromise: Promise<void> | undefined;
@@ -63,7 +63,7 @@ export const useSession = defineStore("token-user-session", () => {
         "en",
       config.value.translations
     );
-    document.title = config.value.siteName || "AI Vora";
+    document.title = siteName.value;
     let favicon = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
     if (!favicon) {
       favicon = document.createElement("link");

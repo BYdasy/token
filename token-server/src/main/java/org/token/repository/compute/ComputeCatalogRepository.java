@@ -32,8 +32,8 @@ public class ComputeCatalogRepository {
         return ComputeData.normalizeRows(mapper.catalogProductRows(args));
     }
 
-    public List<Map<String, Object>> homeCatalogProductRows(Object... args) {
-        return ComputeData.normalizeRows(mapper.homeCatalogProductRows(args));
+    public List<Map<String,Object>> homePartners() {
+        return ComputeData.normalizeRows(mapper.homePartners());
     }
 
     public List<Map<String, Object>> publicModelsModelRows(Object... args) {

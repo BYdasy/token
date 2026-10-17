@@ -52,7 +52,7 @@ public class ComputeCompanyFileService {
     }
 
     public Map<String, Object> options() {
-        return fields("globalScope", scope.current().global(), "maxFileBytes", ComputeCompanyFileStorage.MAX_FILE_BYTES);
+        return fields("globalScope", scope.current().global(), "maxFileBytes", storage.maxPdfBytes(), "maxVideoBytes", storage.maxVideoBytes());
     }
 
     public Map<String, Object> adminList(Map<String, String> query) {
@@ -85,6 +85,18 @@ public class ComputeCompanyFileService {
         return rows;
     }
 
+    /** 首页只公开被明确选中的启用视频，PDF和普通外链不能通过此入口公开。 */
+    public List<Map<String, Object>> homepageVideos(String language) {
+        var rows = repository.homepageVideos();
+        rows.forEach(row -> {
+            translation.applyCompanyFileTranslation(row, language);
+            decorate(row, false);
+            if ("VIDEO".equals(row.get("resourceType"))) row.put("url", "/api/compute/public/company-videos/" + row.get("id") + "/video");
+            row.keySet().retainAll(Set.of("id", "fileName", "resourceType", "url", "playbackType", "embedUrl", "mimeType"));
+        });
+        return rows;
+    }
+
     public Map<String, Object> upload(MultipartFile file) {
         scope.requireGlobalScope();
         int actor = scope.currentAdminUid();
@@ -95,10 +107,10 @@ public class ComputeCompanyFileService {
             return transactions.execute(status -> {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override public void afterCompletion(int completion) {
-                        // 提交结果未知时保留文件供核查，不能误删实际已提交记录引用的PDF。
+                        // 提交结果未知时保留文件供核查，不能误删实际已提交记录引用的文件。
                         if (completion == STATUS_ROLLED_BACK) {
                             try { storage.discard(stored); }
-                            catch (RuntimeException cleanup) { log.error("公司PDF回滚后的新文件清理失败", cleanup); }
+                            catch (RuntimeException cleanup) { log.error("公司文件回滚后的新文件清理失败", cleanup); }
                         }
                     }
                 });
@@ -106,6 +118,7 @@ public class ComputeCompanyFileService {
                 scope.requireGlobalScope();
                 var now = LocalDateTime.now(ZoneOffset.UTC);
                 long id = data.insert("compute_company_file", fields("file_name", stored.fileName(), "stored_name", stored.storedName(),
+                        "resource_type", stored.resourceType(), "mime_type", stored.mimeType(), "homepage", 0,
                         "file_size", stored.size(), "enabled", 1, "sort_no", 0, "version", 1,
                         "created_by", actor, "updated_by", actor, "created_at", now, "updated_at", now));
                 return adminRow(id);
@@ -129,11 +142,19 @@ public class ComputeCompanyFileService {
             var rows = repository.updateCompanyFileRows(id, version);
             if (rows.isEmpty()) throw new BusinessException("server.compute.companyFile.changed");
             var row = rows.get(0);
-            boolean link = "LINK".equals(row.get("resourceType"));
-            String name = link ? title(input.get("fileName")) : ComputeCompanyFileStorage.displayName(input.get("fileName") instanceof String text ? text : null);
+            String type = String.valueOf(row.get("resourceType"));
+            if (input.containsKey("resourceType") && !type.equals(input.get("resourceType"))) throw invalid();
+            boolean video = "VIDEO".equals(type), videoLink = "VIDEO_LINK".equals(type), link = "LINK".equals(type) || videoLink;
+            String name = link ? title(input.get("fileName")) : video ? ComputeCompanyFileStorage.videoName(input.get("fileName") instanceof String text ? text : null)
+                    : ComputeCompanyFileStorage.displayName(input.get("fileName") instanceof String text ? text : null);
+            String mime = (String) row.get("mimeType");
+            if (video && !("video/" + name.substring(name.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT)).equals(mime)) throw invalid();
             String url = link ? externalUrl(input.getOrDefault("externalUrl", row.get("externalUrl"))) : null;
+            if (videoLink) { var source = ComputeCompanyVideoSource.parse(url); url = source.url(); mime = source.mimeType(); }
+            Object homepageInput = input.getOrDefault("homepage", flag(row.get("homepage")));
+            if (!(homepageInput instanceof Boolean homepage) || (homepage && !(video || videoLink))) throw invalid();
             var names = names(input.containsKey("names") ? input.get("names") : storedNames(row.get("namesJson")));
-            int changed = repository.updateCompanyFileWrite(name, url, data.json(names), enabled ? 1 : 0, sortNo, actor, LocalDateTime.now(ZoneOffset.UTC), id, version);
+            int changed = repository.updateCompanyFileWrite(name, url, data.json(names), enabled ? 1 : 0, sortNo, actor, LocalDateTime.now(ZoneOffset.UTC), id, version, homepage ? 1 : 0, mime);
             if (changed != 1) throw new BusinessException("server.compute.companyFile.changed");
             return adminRow(id);
         });
@@ -141,15 +162,27 @@ public class ComputeCompanyFileService {
 
     /** 外链只保存地址，不探测、不下载远程内容，也不生成公开代理接口。 */
     public Map<String, Object> createLink(Map<String, Object> input) {
+        return createLink(input, false);
+    }
+
+    public Map<String, Object> createVideoLink(Map<String, Object> input) {
+        return createLink(input, true);
+    }
+
+    private Map<String, Object> createLink(Map<String, Object> input, boolean video) {
         scope.requireGlobalScope();
         String name = title(input.get("fileName"));
-        String url = externalUrl(input.get("externalUrl"));
+        var source = video ? ComputeCompanyVideoSource.parse(input.get("externalUrl")) : null;
+        String url = video ? source.url() : externalUrl(input.get("externalUrl"));
+        Object homepageInput = input.getOrDefault("homepage", false);
+        if (!(homepageInput instanceof Boolean homepage) || (homepage && !video)) throw invalid();
         var names = names(input.getOrDefault("names", Map.of()));
         int actor = scope.currentAdminUid();
         return transactions.execute(status -> {
             scope.requireGlobalScope();
             var now = LocalDateTime.now(ZoneOffset.UTC);
-            long id = data.insert("compute_company_file", fields("file_name", name, "resource_type", "LINK", "external_url", url,
+            long id = data.insert("compute_company_file", fields("file_name", name, "resource_type", video ? "VIDEO_LINK" : "LINK", "external_url", url,
+                    "mime_type", source == null ? null : source.mimeType(), "homepage", homepage ? 1 : 0,
                     "names_json", data.json(names), "stored_name", "link_" + UUID.randomUUID().toString().replace("-", ""),
                     "file_size", 0, "enabled", 1, "sort_no", 0, "version", 1,
                     "created_by", actor, "updated_by", actor, "created_at", now, "updated_at", now));
@@ -172,18 +205,47 @@ public class ComputeCompanyFileService {
                 .body(resource);
     }
 
+    /** FileSystemResource由Spring MVC处理单段/多段Range及416，不将视频整体读入内存。 */
+    public ResponseEntity<Resource> video(long id, boolean admin, boolean homepage) {
+        if (admin) scope.requireGlobalScope();
+        var rows = repository.videoFile(id, admin, homepage);
+        if (rows.isEmpty()) throw ComputeCompanyFileStorage.missing();
+        var row = rows.get(0);
+        String storedName = (String) row.get("storedName"), mime = (String) row.get("mimeType");
+        if (!("video/mp4".equals(mime) || "video/webm".equals(mime)) || storedName == null
+                || !storedName.endsWith("." + mime.substring(6))) throw ComputeCompanyFileStorage.missing();
+        long size = ((Number) row.get("fileSize")).longValue();
+        Resource resource = storage.read(storedName, size, true);
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(mime)).contentLength(size)
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                .header("X-Content-Type-Options", "nosniff")
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                        .filename(ComputeCompanyFileStorage.videoName((String) row.get("fileName")), StandardCharsets.UTF_8).build().toString())
+                .body(resource);
+    }
+
     private Map<String, Object> adminRow(long id) {
         var row = repository.adminFile(id);
         decorate(row, true); return row;
     }
     private void decorate(Map<String, Object> row, boolean admin) {
-        boolean link = "LINK".equals(row.get("resourceType"));
-        row.put("url", link ? externalUrl(row.get("externalUrl")) : "/api/compute/" + (admin ? "admin" : "user") + "/company-files/" + row.get("id") + "/pdf");
+        boolean video = "VIDEO".equals(row.get("resourceType")), videoLink = "VIDEO_LINK".equals(row.get("resourceType"));
+        boolean link = "LINK".equals(row.get("resourceType")) || videoLink;
+        row.put("url", link ? externalUrl(row.get("externalUrl")) : "/api/compute/" + (admin ? "admin" : "user") + "/company-files/" + row.get("id") + (video ? "/video" : "/pdf"));
+        row.put("playbackType", video ? "FILE" : "NONE");
+        if (videoLink) {
+            var source = ComputeCompanyVideoSource.parse(row.get("externalUrl"));
+            row.put("url", source.url()); row.put("playbackType", source.playbackType());
+            row.put("embedUrl", source.embedUrl()); row.put("mimeType", source.mimeType());
+        }
         if (admin) row.put("names", storedNames(row.remove("namesJson")));
         row.remove("externalUrl");
         if (admin && link) row.put("externalUrl", row.get("url"));
-        if (row.containsKey("enabled")) row.put("enabled", Objects.equals(row.get("enabled"), true) || Objects.equals(String.valueOf(row.get("enabled")), "1"));
+        if (row.containsKey("enabled")) row.put("enabled", flag(row.get("enabled")));
+        if (row.containsKey("homepage")) row.put("homepage", flag(row.get("homepage")));
     }
+    private static boolean flag(Object value) { return Objects.equals(value, true) || Objects.equals(String.valueOf(value), "1"); }
     private static String title(Object value) {
         if (!(value instanceof String input)) throw invalid();
         String title = input.trim();

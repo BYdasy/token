@@ -19,7 +19,12 @@ export function runtimeTimelineAvailable(runtime: PlatformRuntime, elapsedMs: nu
   if (!runtime.enabled || runtime.mode !== 'AUTO' || !runtime.samples?.length) return false;
   const end = Math.max(...runtime.samples.map(sample => Date.parse(sample.at)));
   const now = Date.parse(runtime.serverTime || '') + Math.max(0, elapsedMs);
-  return Number.isFinite(now) && now < end + Math.max(1, runtime.sampleSeconds || 2) * 1000;
+  return Number.isFinite(now) && now < end + runtimeSampleMilliseconds(runtime);
+}
+
+export function runtimeSampleMilliseconds(runtime: PlatformRuntime): number {
+  const seconds = Number(runtime.sampleSeconds ?? runtime.changeSeconds ?? 2);
+  return Math.min(300, Math.max(1, Number.isFinite(seconds) ? seconds : 2)) * 1000;
 }
 
 export function runtimeSyncMilliseconds(runtime?: PlatformRuntime): number {

@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAccess } from '@vben/access';
 import { useAccessStore } from '@vben/stores';
 import { useI18n } from '@vben/locales';
-import { Page } from '@vben/common-ui';
+import Page from '#/components/business/BusinessListPage.vue';
 import { ElAlert, ElButton, ElCard, ElDatePicker, ElDialog, ElForm, ElFormItem, ElInput, ElMessage, ElOption, ElPagination, ElSelect, ElTableColumn, ElTabPane, ElTabs, ElTag } from 'element-plus';
 import { ElTable } from '#/adapter/table';
 import type { MerchantRow } from '#/api/merchant';
@@ -36,18 +36,27 @@ const allowed = ref(false); const enabled = ref(false); const loading = ref(fals
 const initializing = ref(true);
 const active = ref(''); const result = ref<MerchantRow>({}); const query = reactive<MerchantRow>({});
 const pageNo = ref(1); const cursor = ref<string | undefined>(); const cursorHistory = ref<(string | undefined)[]>([]);
+const pageSizes = [10, 20, 50, 100];
+const pageSize = ref(20);
+// 持久化查询目标与已展示页分开：失败保留旧页，刷新仍重试原目标，重置也不能恢复旧筛选。
+const requestedPage = ref(1), requestedSize = ref(20);
 const detail = ref<MerchantRow>({}); const detailOpen = ref(false); const actionBusy = ref(false);
 const detailBatchId = ref('');
 const secureOpen = ref(false);
 const dates = ref<string[]>([]);
 const filterAssets = ref<MerchantRow[]>([]), filterLoading = ref(false), filterFailed = ref(false);
-useFilterRecovery(() => `merchant:${props.page}:${active.value}`, { query, dates, pageNo, cursor, cursorHistory });
-const tabResults = new Map<string, MerchantRow>();
+const applied = ref<MerchantRow>();
+useFilterRecovery(() => `merchant:${props.page}:${active.value}`, { query, dates, pageNo: requestedPage, pageSize: requestedSize, cursor, cursorHistory, applied });
+type PageRequest = { page: number; size: number; cursor?: string; history: (string | undefined)[]; filters: MerchantRow };
+const tabResults = new Map<string, { result: MerchantRow; request: PageRequest; failedRequest?: PageRequest }>();
+const displayedFilters = ref<MerchantRow>({});
+let lastRequest: PageRequest | undefined;
 const secureForm = reactive<MerchantRow>({ network_id: 'TRON_MAINNET', code: '' });
 let contextVersion = 0, readVersion = 0, actionVersion = 0, filterVersion = 0, disposed = false;
 const rows = computed<MerchantRow[]>(() => active.value === 'resources' ? merchantResourceRows(result.value) : result.value.items ?? (result.value.order ? [result.value.order] : []));
 const activeColumns = computed(() => columns[active.value] ?? []);
 const activeFilters = computed(() => filters[active.value] ?? []);
+const singleRecord = computed(() => (active.value === 'resources' && displayedFilters.value.request_id) || (active.value === 'batches' && displayedFilters.value.batch_id));
 const label = (key: string) => c(`merchant.field.${key}`);
 const filterLabel = (key: string) => label(active.value === 'batches' && key === 'status' ? 'business_status' : key);
 const columnLabel = (group: string[]) => label(active.value === 'batches' && group[0] === 'display_status' ? 'credit_status' : group[0]!);
@@ -77,10 +86,14 @@ function current(own: ReturnType<typeof snapshot>) {
 }
 function invalidateContext() {
   contextVersion++; readVersion++; actionVersion++; filterVersion++;
+  pageNo.value = 1; pageSize.value = 20;
   result.value = {}; detail.value = {}; detailBatchId.value = ''; detailOpen.value = false; secureOpen.value = false;
   Object.keys(secureForm).forEach(key => delete secureForm[key]);
   actionBusy.value = false; connectionResult.value = undefined;
   filterLoading.value = false;
+  failed.value = false;
+  lastRequest = undefined;
+  displayedFilters.value = {};
 }
 async function loadFilterOptions() {
   if (!allowed.value || !enabled.value || !activeFilters.value.some(key => key === 'network_id' || key === 'asset_id')) return;
@@ -91,25 +104,74 @@ async function loadFilterOptions() {
   } catch { if (current(own) && run === filterVersion) filterFailed.value = true; }
   finally { if (current(own) && run === filterVersion) filterLoading.value = false; }
 }
-async function load() {
+function filterSnapshot(): MerchantRow {
+  const values = Object.fromEntries(activeFilters.value.filter(key => query[key] !== '' && query[key] != null).map(key => [key, query[key]]));
+  return { ...values, ...(datedResources.has(active.value) && dates.value?.length === 2
+    ? { start_time: toUtc(dates.value[0]), end_time: toUtc(dates.value[1]) } : {}) };
+}
+function displayedRequest(): PageRequest {
+  return { page: requestedPage.value, size: pageSizes.includes(requestedSize.value) ? requestedSize.value : 20,
+    cursor: cursor.value, history: [...cursorHistory.value], filters: { ...(applied.value ?? filterSnapshot()) } };
+}
+function commitPage(value: MerchantRow, request: PageRequest) {
+  result.value = value; applied.value = { ...request.filters }; pageNo.value = request.page; requestedPage.value = request.page;
+  displayedFilters.value = { ...request.filters };
+  pageSize.value = request.size; requestedSize.value = request.size;
+  cursor.value = request.cursor; cursorHistory.value = [...request.history];
+}
+async function load(request: PageRequest = displayedRequest()) {
   if (disposed || !access.accessToken || !allowed.value || !availableTabs.value.includes(active.value) || (!enabled.value && active.value !== 'connection')) return;
   const own = snapshot(), run = ++readVersion;
+  lastRequest = request;
+  applied.value = { ...request.filters }; requestedPage.value = request.page; requestedSize.value = request.size;
   loading.value = true; failed.value = false;
   try {
-    const value = await merchantQuery(own.tab, { ...query, page: pageNo.value, limit: 20, page_size: 20, before_id: cursor.value,
-      ...(datedResources.has(own.tab) && dates.value?.length === 2 ? { start_time: toUtc(dates.value[0]), end_time: toUtc(dates.value[1]) } : {}) });
-    if (current(own) && run === readVersion) { result.value = value; tabResults.set(own.tab, value); }
-  } catch { if (current(own) && run === readVersion) { failed.value = true; result.value = {}; } }
+    const value = await merchantQuery(own.tab, { ...request.filters, limit: request.size, page_size: request.size,
+      ...(pagedResources.has(own.tab) ? { page: request.page } : cursorResources.has(own.tab) && request.cursor ? { before_id: request.cursor } : {}) });
+    if (current(own) && run === readVersion) {
+      const detailQuery = (own.tab === 'resources' && request.filters.request_id) || (own.tab === 'batches' && request.filters.batch_id);
+      if (pagedResources.has(own.tab) && !detailQuery) {
+        const total = Number(value.total);
+        if (!Array.isArray(value.items) || value.total == null || !Number.isSafeInteger(total) || total < 0
+          || (value.page != null && Number(value.page) !== request.page)) throw new Error('商户分页响应无效');
+        const lastPage = Math.max(1, Math.ceil(total / request.size));
+        if (request.page > lastPage) { await load({ ...request, page: lastPage }); return; }
+      }
+      commitPage(value, request); tabResults.set(own.tab, { result: value, request });
+    }
+  } catch {
+    if (current(own) && run === readVersion) {
+      failed.value = true;
+      const saved = tabResults.get(own.tab);
+      if (saved) saved.failedRequest = request;
+    }
+  }
   finally { if (current(own) && run === readVersion) loading.value = false; }
 }
-function search() { pageNo.value = 1; cursor.value = undefined; cursorHistory.value = []; void load(); }
+function search() { void load({ page: 1, size: pageSize.value, history: [], filters: filterSnapshot() }); }
 function reset() { Object.keys(query).forEach(key => delete query[key]); dates.value = []; search(); }
+function changePage(value: number) {
+  if (loading.value || (value === pageNo.value && !failed.value) || !Number.isInteger(value) || value < 1) return;
+  void load({ ...displayedRequest(), page: value, size: pageSize.value });
+}
+function changeSize(value: number) {
+  if (loading.value || !pageSizes.includes(value) || (value === pageSize.value && value === requestedSize.value)) return;
+  void load({ ...displayedRequest(), page: 1, size: value, cursor: undefined, history: [] });
+}
+function retryPage() { if (!loading.value && lastRequest) void load(lastRequest); }
 async function changeTab(value: string | number, updateRoute = true) {
   const selected = String(value);
   if (disposed || !availableTabs.value.includes(selected) || selected === active.value) return;
   invalidateContext(); active.value = selected; loading.value = false;
   const saved = tabResults.get(selected);
-  if (saved) result.value = saved;
+  if (saved) {
+    commitPage(saved.result, saved.request);
+    if (saved.failedRequest) {
+      lastRequest = saved.failedRequest; failed.value = true;
+      requestedPage.value = lastRequest.page; requestedSize.value = lastRequest.size;
+      applied.value = { ...lastRequest.filters };
+    }
+  }
   else void load();
   if (!filterAssets.value.length) void loadFilterOptions();
   if (updateRoute) await router.replace({ query: { ...route.query, merchantTab: selected } });
@@ -118,7 +180,7 @@ async function initialize() {
   tabResults.clear();
   invalidateContext(); allowed.value = false; enabled.value = false; initializing.value = true; failed.value = false; loading.value = false;
   filterAssets.value = []; filterFailed.value = false;
-  if (props.page === 'logs' && route.query.merchantTab === 'resources' && (isSuper.value || hasAccessByCodes(['80203']))) {
+  if (props.page === 'logs' && route.path === '/merchant/logs' && route.query.merchantTab === 'resources' && (isSuper.value || hasAccessByCodes(['80203']))) {
     await router.replace({ path: '/merchant/energy', query: { ...route.query, merchantTab: 'resources' } });
     return;
   }
@@ -141,8 +203,15 @@ watch(() => route.query.merchantTab, value => {
     if (initializing.value) void initialize(); else void changeTab(selected, false);
   }
 });
-function next() { cursorHistory.value.push(cursor.value); cursor.value = result.value.next_cursor; pageNo.value++; void load(); }
-function previous() { cursor.value = cursorHistory.value.pop(); pageNo.value--; void load(); }
+function next() {
+  if (loading.value || !result.value.has_more || !result.value.next_cursor || result.value.next_cursor === cursor.value) return;
+  void load({ ...displayedRequest(), page: pageNo.value + 1, cursor: result.value.next_cursor, history: [...cursorHistory.value, cursor.value] });
+}
+function previous() {
+  if (loading.value || pageNo.value <= 1) return;
+  const history = [...cursorHistory.value], previousCursor = history.pop();
+  void load({ ...displayedRequest(), page: pageNo.value - 1, cursor: previousCursor, history });
+}
 async function loadRelated(row: MerchantRow) {
   if (disposed || actionBusy.value || !allowed.value || !availableTabs.value.includes(active.value)) return;
   if (active.value === 'batches' && typeof row.batch_id === 'string') {
@@ -204,17 +273,18 @@ onBeforeUnmount(() => { disposed = true; invalidateContext(); });
 </script>
 
 <template>
-  <Page auto-content-height>
-    <ElAlert class="mb-4" type="info" :closable="false" :title="c('merchant.platformBoundary')" />
+  <Page>
+    <div class="compute-page">
+    <ElAlert type="info" :closable="false" :title="c('merchant.platformBoundary')" />
     <ElCard v-if="initializing" v-loading="true" style="min-height: 120px" shadow="never" />
     <ElAlert v-else-if="failed && !allowed" type="error" :closable="false" :title="c('merchant.loadFailed')" />
     <ElAlert v-else-if="!allowed" type="warning" :closable="false" :title="c('merchant.globalRequired')" />
     <ElAlert v-else-if="!enabled && active !== 'connection'" type="warning" :closable="false" :title="c('merchant.notEnabled')" />
     <template v-else>
-      <MerchantEnergyAccount v-if="props.page === 'energy'" :allowed="allowed && enabled && availableTabs.includes('resources')" />
-      <ElAlert v-if="active === 'notifications'" class="mb-4" type="info" :title="c('merchant.notificationScopeHint')" :closable="false" />
-      <ElAlert v-if="active === 'synchronization'" class="mb-4" type="info" :closable="false" :title="c('merchant.syncHint')" />
-      <ElCard class="mb-4" shadow="never">
+      <MerchantEnergyAccount v-if="props.page === 'energy'" class="!mb-0" :allowed="allowed && enabled && availableTabs.includes('resources')" />
+      <ElAlert v-if="active === 'notifications'" type="info" :title="c('merchant.notificationScopeHint')" :closable="false" />
+      <ElAlert v-if="active === 'synchronization'" type="info" :closable="false" :title="c('merchant.syncHint')" />
+      <ElCard shadow="never">
         <ElTabs v-if="availableTabs.length > 1" :model-value="active" @update:model-value="changeTab">
           <ElTabPane v-for="tab in availableTabs" :key="tab" :name="tab" :label="tabLabel(tab)" />
         </ElTabs>
@@ -232,9 +302,9 @@ onBeforeUnmount(() => { disposed = true; invalidateContext(); });
           </ElFormItem>
         </ElForm>
       </ElCard>
-      <ElAlert v-if="filterFailed" class="mb-4" type="warning" :closable="false" :title="c('v49Merchant.filterLoadFailed')"><ElButton link type="primary" @click="loadFilterOptions">{{ c('v12merchant.refresh') }}</ElButton></ElAlert>
-      <ElCard v-loading="loading" shadow="never">
-        <ElAlert v-if="failed" class="mb-4" type="error" :title="c('merchant.loadFailed')" :closable="false" />
+      <ElAlert v-if="filterFailed" type="warning" :closable="false" :title="c('v49Merchant.filterLoadFailed')"><ElButton link type="primary" @click="loadFilterOptions">{{ c('v12merchant.refresh') }}</ElButton></ElAlert>
+      <ElCard v-loading="loading" :class="{ 'compute-list-card': pagedResources.has(active) }" shadow="never">
+        <ElAlert v-if="failed" class="mb-4" type="error" :title="c('merchant.loadFailed')" :closable="false"><ElButton link type="primary" :disabled="loading" @click="retryPage">{{ c('v12merchant.refresh') }}</ElButton></ElAlert>
         <template v-if="active === 'connection'">
           <ElAlert class="mb-4" type="info" :closable="false" :title="c('v12merchant.externalCredentials')" />
           <dl class="connection-fields"><template v-for="key in ['baseUrl', 'merchantId', 'credentialId', 'environment']" :key="key"><dt>{{ c(`v12merchant.${key}`) }}</dt><dd>{{ result[key] || '—' }}</dd></template>
@@ -262,7 +332,7 @@ onBeforeUnmount(() => { disposed = true; invalidateContext(); });
           </ElTable>
         </template>
         <template v-else>
-          <ElTable :data="rows" stripe>
+          <ElTable :data="rows" :height="pagedResources.has(active) ? '100%' : undefined" :empty-text="c('common.empty')" stripe>
             <ElTableColumn v-for="(group, index) in activeColumns" :key="`${active}:${index}`" :label="columnLabel(group)" :min-width="active === 'resources' && group[0] === 'resource_items' ? 360 : index === 0 ? 210 : 175">
               <template #default="{ row }">
                 <MerchantCollectionStatus v-if="active === 'batches' && group[0] === 'display_status'" :value="row" />
@@ -274,7 +344,10 @@ onBeforeUnmount(() => { disposed = true; invalidateContext(); });
               <ElButton link type="primary" :disabled="actionBusy" @click="loadRelated(row)">{{ c('merchant.details') }}</ElButton>
             </template></ElTableColumn>
           </ElTable>
-          <ElPagination v-if="pagedResources.has(active) && !(active === 'resources' && query.request_id)" class="mt-4" :current-page="pageNo" :page-size="20" :total="Number(result.total ?? 0)" layout="total, prev, pager, next" @current-change="(value: number) => { pageNo = value; load(); }" />
+          <div v-if="pagedResources.has(active) && !singleRecord && result.total != null" class="compute-pagination">
+            <!-- 请求条数改变或失败时清除控件的乐观选择，分页始终对应上一成功结果，重置也不残留旧size。 -->
+            <ElPagination :key="`${active}:${pageSize}:${requestedSize}:${failed}`" :current-page="pageNo" :page-size="pageSize" :page-sizes="pageSizes" :pager-count="5" :total="Number(result.total)" :disabled="loading" layout="total, sizes, prev, pager, next, jumper" @update:current-page="changePage" @update:page-size="changeSize" />
+          </div>
           <div v-if="cursorResources.has(active)" class="mt-4 flex justify-end gap-3"><ElButton :disabled="pageNo <= 1 || loading" @click="previous">{{ c('merchant.previous') }}</ElButton><ElButton :disabled="!result.has_more || loading" @click="next">{{ c('merchant.next') }}</ElButton></div>
         </template>
       </ElCard>
@@ -292,6 +365,7 @@ onBeforeUnmount(() => { disposed = true; invalidateContext(); });
       </ElForm>
       <template #footer><ElButton @click="secureOpen = false">{{ c('merchant.cancel') }}</ElButton><ElButton type="primary" :loading="actionBusy" @click="submitSecure">{{ c('merchant.submit') }}</ElButton></template>
     </ElDialog>
+    </div>
   </Page>
 </template>
 

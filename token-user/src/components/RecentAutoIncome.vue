@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onUnmounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { api } from '@/api';
 import type { BusinessRecord } from '@/api/types';
@@ -7,12 +7,14 @@ import { useSession } from '@/stores/session';
 import { date, money } from '@/utils/format';
 import { useToken } from '@/composables/useToken';
 
-const props = defineProps<{ executionOrder?: unknown }>();
+const props = defineProps<{ executionOrder?: unknown; suspended?: boolean }>();
 const session = useSession();
 const { unitName } = useToken();
 const { t, locale } = useI18n();
 const records = ref<BusinessRecord[]>([]);
 const loading = ref(false), error = ref('');
+const desktop = ref(false), visible = ref(!document.hidden);
+let media: MediaQueryList | undefined;
 function incomeAmount(row: BusinessRecord) {
   if (row.accountingBusinessAmount != null) return '+' + money(row.accountingBusinessAmount);
   if (['USD', 'USDT', 'USDC', 'USDT0', 'TOKEN'].includes(String(row.currency || '').toUpperCase()))
@@ -25,9 +27,11 @@ async function load() {
   controller?.abort();
   const request = new AbortController();
   controller = request;
-  records.value = [];
+  if (!token || disposed || !desktop.value || !visible.value || props.suspended) {
+    loading.value = false;
+    return;
+  }
   error.value = '';
-  if (!token || disposed) { loading.value = false; return; }
   loading.value = true;
   try {
     const response = await api.list('ledger', 1, 3, { category: 'AUTO_INCOME' }, request.signal, true);
@@ -38,18 +42,42 @@ async function load() {
       error.value = cause instanceof Error ? cause.message : t('user.error.request');
   } finally { if (current === version) loading.value = false; }
 }
-watch([() => session.token, () => props.executionOrder, locale], () => void load(), { immediate: true });
-onUnmounted(() => { disposed = true; version++; controller?.abort(); });
+watch(
+  [() => session.token, locale, () => props.executionOrder, () => props.suspended, desktop, visible],
+  ([token, language], previous) => {
+    if (token !== previous[0] || language !== previous[1]) {
+      records.value = [];
+      error.value = '';
+    }
+    void load();
+  },
+  { immediate: true },
+);
+function mediaChanged() { desktop.value = !!media?.matches; }
+function visibilityChanged() { visible.value = !document.hidden; }
+onMounted(() => {
+  media = window.matchMedia('(min-width: 1024px)');
+  mediaChanged();
+  media.addEventListener('change', mediaChanged);
+  document.addEventListener('visibilitychange', visibilityChanged);
+});
+onUnmounted(() => {
+  disposed = true;
+  version++;
+  controller?.abort();
+  media?.removeEventListener('change', mediaChanged);
+  document.removeEventListener('visibilitychange', visibilityChanged);
+});
 </script>
 
 <template>
-  <section class="vora-recent-income">
+  <section v-if="desktop" class="vora-recent-income">
     <header>
       <h2>{{ $t('user.vora.mobile.recentIncome') }}</h2>
       <RouterLink to="/auto-records">{{ $t('user.common.more') }}<van-icon name="arrow" /></RouterLink>
     </header>
     <p v-if="error" class="inline-error" role="alert">{{ error }}<button type="button" class="text-button" @click="load">{{ $t('user.common.refresh') }}</button></p>
-    <div v-else-if="loading" class="vora-income-state" role="status"><van-loading size="18" />{{ $t('user.common.loading') }}</div>
+    <div v-else-if="!records.length && (loading || suspended)" class="vora-income-state" role="status"><van-loading size="18" />{{ $t('user.common.loading') }}</div>
     <p v-else-if="!records.length" class="vora-income-state">{{ $t('user.common.empty') }}</p>
     <ul v-else>
       <li v-for="row in records" :key="row.id">
@@ -59,10 +87,18 @@ onUnmounted(() => { disposed = true; version++; controller?.abort(); });
       </li>
     </ul>
   </section>
+  <RouterLink v-else to="/auto-records" class="vora-income-records-link">
+    <span class="vora-income-icon" aria-hidden="true"><van-icon name="bar-chart-o" /></span>
+    <strong>{{ $t('user.wallet.income') }}</strong>
+    <van-icon name="arrow" aria-hidden="true" />
+  </RouterLink>
 </template>
 
 <style scoped>
 .vora-recent-income { min-width: 0; }
+.vora-income-records-link { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 14px; border-radius: 12px; color: var(--vora-ink); background: var(--vora-surface); }
+.vora-income-records-link strong { flex: 1; font-size: 14px; font-weight: 600; }
+.vora-income-records-link > .van-icon { color: var(--vora-muted); }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
 h2 { margin: 0; color: var(--vora-ink); font-size: 17px; }
 header a { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: var(--vora-muted); font-size: 12px; }

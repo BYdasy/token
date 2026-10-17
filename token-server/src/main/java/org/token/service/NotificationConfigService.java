@@ -1,6 +1,9 @@
 package org.token.service;
 
 import org.token.model.entity.NotificationTemplate;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.token.model.request.notification.NotificationConfigPageRequest;
+import org.token.model.response.NotificationChannelOptionView;
 import org.token.model.request.notification.ChannelConfigSaveRequest;
 import org.token.model.request.notification.NotificationTemplateSaveRequest;
 import org.token.model.response.NotificationChannelView;
@@ -14,6 +17,10 @@ import java.util.Map;
 public interface NotificationConfigService {
 
     List<NotificationChannelView> channels();
+
+    Page<NotificationChannelView> channelPage(NotificationConfigPageRequest request);
+
+    List<NotificationChannelOptionView> channelOptions();
 
     NotificationChannelView saveChannel(ChannelConfigSaveRequest request);
 
@@ -34,6 +41,8 @@ public interface NotificationConfigService {
     NotificationChannelView completeGoogleAuthorization(Long id, String code, String state, String redirectUri);
 
     List<NotificationTemplateView> templates();
+
+    Page<NotificationTemplateView> templatePage(NotificationConfigPageRequest request);
 
     NotificationTemplateView saveTemplate(NotificationTemplateSaveRequest request);
 

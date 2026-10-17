@@ -12,6 +12,7 @@ import { Page } from '@vben/common-ui';
 import { useI18n } from '@vben/locales';
 
 import {
+  ElAlert,
   ElButton,
   ElCard,
   ElDatePicker,
@@ -45,10 +46,10 @@ import {
   deleteNotificationTemplate,
   completeGoogleAuthorization,
   fetchManagedNotifications,
-  fetchNotificationChannels,
+  fetchNotificationChannelPage,
   inspectTelegramChannel,
   fetchNotificationTemplateLanguages,
-  fetchNotificationTemplates,
+  fetchNotificationTemplatePage,
   getGoogleAuthorization,
   saveNotificationChannel,
   saveNotificationTemplate,
@@ -65,6 +66,7 @@ import {
 } from '#/components/business/useTableColumns';
 import TinymceMin from '#/views/Tinymcemin.vue';
 import TelegramTemplateEditor from '#/views/system/notifications/components/TelegramTemplateEditor.vue';
+import TelegramTemplateTestDialog from './components/TelegramTemplateTestDialog.vue';
 import { sanitizeNotificationHtml } from '#/utils/notification-html';
 import { hasTranslationContent } from '#/utils/translation-content';
 import { permissionCodes, SYSTEM_PERMISSIONS } from '#/constants/permissions';
@@ -73,6 +75,11 @@ const { t } = useI18n();
 const { hasAccessByCodes, hasAccessByRoles } = useAccess();
 const props = defineProps<{ section?: string }>();
 const loading = ref(false);
+const channelLoading = ref(false), templateLoading = ref(false);
+const channelLoadFailed = ref(false), templateLoadFailed = ref(false);
+const channelOptionsRevision = ref(0);
+const templateTestDialog = ref(false);
+const testingTemplate = ref<NotificationTemplate>();
 const inspectingTelegram = ref<number>();
 
 async function inspectTelegram(row: Record<string, any>) {
@@ -96,6 +103,8 @@ const recordQuery = reactive({
   status: '',
 });
 const recordPager = reactive({ current: 1, size: 20, total: 0 });
+const channelPager = reactive({ current: 1, size: 20, total: 0 });
+const templatePager = reactive({ current: 1, size: 20, total: 0 });
 const appliedRecordFilter = ref<Record<string, any>>({});
 const channelKeyword = ref(''),
   appliedChannelKeyword = ref('');
@@ -103,33 +112,17 @@ const templateKeyword = ref(''),
   appliedTemplateKeyword = ref('');
 const templateType = ref(''),
   appliedTemplateType = ref('');
-useFilterRecovery('notifications', { recordQuery, recordPager, appliedRecordFilter, channelKeyword, appliedChannelKeyword, templateKeyword, appliedTemplateKeyword, templateType, appliedTemplateType });
-const filteredChannels = computed(() =>
-  channels.value.filter((row) =>
-    [row.name, row.channelType, row.defaultRecipients].some((value) =>
-      String(value || '')
-        .toLowerCase()
-        .includes(appliedChannelKeyword.value.toLowerCase()),
-    ),
-  ),
-);
-const filteredTemplates = computed(() =>
-  templates.value.filter((row) =>
-    (!appliedTemplateType.value || row.channelType === appliedTemplateType.value) &&
-    [row.code, row.shortCode, row.name, row.channelType, row.contentTemplate].some((value) =>
-      String(value || '')
-        .toLowerCase()
-        .includes(appliedTemplateKeyword.value.toLowerCase()),
-    ),
-  ),
-);
-function searchTemplates(reset = false) {
+useFilterRecovery('notifications', { recordQuery, recordPager, channelPager, templatePager, appliedRecordFilter, channelKeyword, appliedChannelKeyword, templateKeyword, appliedTemplateKeyword, templateType, appliedTemplateType });
+async function searchChannels(reset = false) {
+  if (reset) channelKeyword.value = '';
+  await loadChannels({ current: 1, size: channelPager.size, keyword: channelKeyword.value.trim() });
+}
+async function searchTemplates(reset = false) {
   if (reset) {
     templateKeyword.value = '';
     templateType.value = '';
   }
-  appliedTemplateKeyword.value = templateKeyword.value.trim();
-  appliedTemplateType.value = templateType.value || '';
+  await loadTemplates({ current: 1, size: templatePager.size, keyword: templateKeyword.value.trim(), channelType: templateType.value || '' });
 }
 async function searchRecords(reset = false) {
   if (reset) Object.assign(recordQuery, { dates: [], keyword: '', status: '' });
@@ -150,6 +143,20 @@ const exportRecords = computed(() => {
       size,
       filterParams,
     });
+    return { records: page.items, total: page.total };
+  };
+});
+const exportChannels = computed(() => {
+  const keyword = appliedChannelKeyword.value;
+  return async (current: number, size: number) => {
+    const page = await fetchNotificationChannelPage({ current, size, keyword });
+    return { records: page.items, total: page.total };
+  };
+});
+const exportTemplates = computed(() => {
+  const keyword = appliedTemplateKeyword.value, channelType = appliedTemplateType.value;
+  return async (current: number, size: number) => {
+    const page = await fetchNotificationTemplatePage({ current, size, keyword, channelType });
     return { records: page.items, total: page.total };
   };
 });
@@ -282,8 +289,11 @@ const translatedTemplateLanguageCount = computed(
     }).length,
 );
 
-let recordGeneration = 0;
-onBeforeUnmount(() => { ++recordGeneration; });
+let recordGeneration = 0, channelGeneration = 0, templateGeneration = 0;
+type NotificationListTarget = { current: number; size: number; keyword: string; channelType?: string };
+let channelRetryTarget: NotificationListTarget | undefined;
+let templateRetryTarget: NotificationListTarget | undefined;
+onBeforeUnmount(() => { ++recordGeneration; ++channelGeneration; ++templateGeneration; });
 async function loadRecords() {
   if (!canReadRecords.value) return;
   const current = ++recordGeneration;
@@ -302,14 +312,55 @@ async function loadRecords() {
   }
 }
 
-async function loadChannels() {
+async function loadChannels(target: NotificationListTarget = { current: channelPager.current, size: channelPager.size, keyword: appliedChannelKeyword.value }): Promise<void> {
   if (!canReadChannels.value) return;
-  channels.value = await fetchNotificationChannels();
+  const run = ++channelGeneration;
+  channelLoading.value = true;
+  channelLoadFailed.value = false;
+  channelRetryTarget = { ...target };
+  try {
+    const page = await fetchNotificationChannelPage(target);
+    if (run !== channelGeneration) return;
+    const lastPage = Math.max(1, Math.ceil(page.total / target.size));
+    if (target.current > lastPage) { await loadChannels({ ...target, current: lastPage }); return; }
+    channels.value = page.items;
+    Object.assign(channelPager, { current: page.current, size: page.size, total: page.total });
+    appliedChannelKeyword.value = target.keyword;
+    channelRetryTarget = undefined;
+  } catch {
+    if (run === channelGeneration) channelLoadFailed.value = true;
+  } finally {
+    if (run === channelGeneration) channelLoading.value = false;
+  }
 }
 
-async function loadTemplates() {
+async function loadTemplates(target: NotificationListTarget = { current: templatePager.current, size: templatePager.size, keyword: appliedTemplateKeyword.value, channelType: appliedTemplateType.value }): Promise<void> {
   if (!canReadTemplates.value) return;
-  templates.value = await fetchNotificationTemplates();
+  const run = ++templateGeneration;
+  templateLoading.value = true;
+  templateLoadFailed.value = false;
+  templateRetryTarget = { ...target };
+  try {
+    const page = await fetchNotificationTemplatePage(target);
+    if (run !== templateGeneration) return;
+    const lastPage = Math.max(1, Math.ceil(page.total / target.size));
+    if (target.current > lastPage) { await loadTemplates({ ...target, current: lastPage }); return; }
+    templates.value = page.items;
+    Object.assign(templatePager, { current: page.current, size: page.size, total: page.total });
+    appliedTemplateKeyword.value = target.keyword;
+    appliedTemplateType.value = target.channelType || '';
+    templateRetryTarget = undefined;
+  } catch {
+    if (run === templateGeneration) templateLoadFailed.value = true;
+  } finally {
+    if (run === templateGeneration) templateLoading.value = false;
+  }
+}
+
+function testTemplate(row: Record<string, any>) {
+  if (!canSend.value || row.channelType !== 'TELEGRAM' || Number(row.enabled) !== 1) return;
+  testingTemplate.value = row as NotificationTemplate;
+  templateTestDialog.value = true;
 }
 
 async function loadActiveTab(tab: string) {
@@ -414,6 +465,7 @@ async function saveChannel() {
     Object.assign(channelForm, saved);
     ElMessage.success(t('admin.notification.channelSaved'));
     channelDialog.value = false;
+    ++channelOptionsRevision.value;
     await loadChannels();
   } finally {
     saving.value = false;
@@ -564,6 +616,7 @@ async function removeChannel(row: any) {
     t('admin.common.prompt'),
   );
   await deleteNotificationChannel(Number(row.id));
+  ++channelOptionsRevision.value;
   await loadChannels();
 }
 
@@ -795,19 +848,16 @@ const {
                 class="exp-filter"
                 clearable
                 :placeholder="t('admin.common.name')"
-                @keyup.enter="appliedChannelKeyword = channelKeyword.trim()"
+                @keyup.enter="searchChannels()"
               />
               <ElButton
                 v-if="canReadChannels"
                 type="primary"
-                @click="appliedChannelKeyword = channelKeyword.trim()"
+                @click="searchChannels()"
                 >{{ t('admin.common.search') }}</ElButton
               ><ElButton
                 v-if="canReadChannels"
-                @click="
-                  channelKeyword = '';
-                  appliedChannelKeyword = '';
-                "
+                @click="searchChannels(true)"
                 >{{ t('admin.common.reset') }}</ElButton
               >
               <ElButton
@@ -820,7 +870,9 @@ const {
                 v-if="canReadChannels"
                 v-model:columns="channelsSelectedColumns"
                 :column-options="channelsColumnOptions"
-                :rows="filteredChannels"
+                :rows="channels"
+                :fetch-page="exportChannels"
+                :loading="channelLoading"
                 storage-key="notification-channels"
               /></div
           ></ElCard>
@@ -829,7 +881,10 @@ const {
             class="exp-card exp-table-card"
             shadow="never"
           >
-            <ElTable v-if="canReadChannels" :data="filteredChannels" stripe>
+            <ElAlert v-if="channelLoadFailed" :title="t('admin.compute.common.loadFailed')" type="error" :closable="false" class="mb-4">
+              <ElButton @click="loadChannels(channelRetryTarget)">{{ t('admin.compute.v12sound.retry') }}</ElButton>
+            </ElAlert>
+            <ElTable v-if="canReadChannels" v-loading="channelLoading" :data="channels" stripe>
               <template
                 v-for="column in channelsVisibleColumns"
                 :key="column.key"
@@ -921,8 +976,14 @@ const {
                 </template>
               </ElTableColumn>
             </ElTable>
+            <div class="exp-pagination">
+              <ElPagination :current-page="channelPager.current" :page-size="channelPager.size" :disabled="channelLoading"
+                :total="channelPager.total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next"
+                @current-change="(current: number) => loadChannels({ current, size: channelPager.size, keyword: appliedChannelKeyword })"
+                @size-change="(size: number) => loadChannels({ current: 1, size, keyword: appliedChannelKeyword })" />
+            </div>
           </ElCard>
-          <TelegramBindings v-if="activeTab === 'channels'" :channels="channels" :can-read="canReadChannels" :can-edit="canSaveChannels" />
+          <TelegramBindings v-if="activeTab === 'channels'" :channels-revision="channelOptionsRevision" :can-read="canReadChannels" :can-edit="canSaveChannels" />
         </ElTabPane>
 
         <ElTabPane
@@ -974,7 +1035,9 @@ const {
                 v-if="canReadTemplates"
                 v-model:columns="templatesSelectedColumns"
                 :column-options="templatesColumnOptions"
-                :rows="filteredTemplates"
+                :rows="templates"
+                :fetch-page="exportTemplates"
+                :loading="templateLoading"
                 storage-key="notification-templates"
               /></div
           ></ElCard>
@@ -983,7 +1046,10 @@ const {
             class="exp-card exp-table-card"
             shadow="never"
           >
-            <ElTable v-if="canReadTemplates" :data="filteredTemplates" stripe>
+            <ElAlert v-if="templateLoadFailed" :title="t('admin.compute.common.loadFailed')" type="error" :closable="false" class="mb-4">
+              <ElButton @click="loadTemplates(templateRetryTarget)">{{ t('admin.compute.v12sound.retry') }}</ElButton>
+            </ElAlert>
+            <ElTable v-if="canReadTemplates" v-loading="templateLoading" :data="templates" stripe>
               <template
                 v-for="column in templatesVisibleColumns"
                 :key="column.key"
@@ -1025,8 +1091,16 @@ const {
                 />
               </template>
 
-              <ElTableColumn :label="t('admin.common.operation')" width="140">
+              <ElTableColumn :label="t('admin.common.operation')" width="220">
                 <template #default="{ row }"
+                  ><ElButton
+                    v-if="canSend && row.channelType === 'TELEGRAM'"
+                    :disabled="Number(row.enabled) !== 1"
+                    :title="Number(row.enabled) !== 1 ? t('admin.notification.templateTest.enableFirst') : ''"
+                    link
+                    type="primary"
+                    @click="testTemplate(row)"
+                    >{{ t('admin.notification.templateTest.action') }}</ElButton
                   ><ElButton
                     v-if="canSaveTemplates"
                     link
@@ -1043,10 +1117,18 @@ const {
                 >
               </ElTableColumn>
             </ElTable>
+            <div class="exp-pagination">
+              <ElPagination :current-page="templatePager.current" :page-size="templatePager.size" :disabled="templateLoading"
+                :total="templatePager.total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next"
+                @current-change="(current: number) => loadTemplates({ current, size: templatePager.size, keyword: appliedTemplateKeyword, channelType: appliedTemplateType })"
+                @size-change="(size: number) => loadTemplates({ current: 1, size, keyword: appliedTemplateKeyword, channelType: appliedTemplateType })" />
+            </div>
           </ElCard>
         </ElTabPane>
       </ElTabs>
     </div>
+
+    <TelegramTemplateTestDialog v-if="canSend && templateTestDialog" v-model="templateTestDialog" :template="testingTemplate" />
 
     <ElDialog
       v-model="channelDialog"

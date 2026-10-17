@@ -65,7 +65,6 @@ export const depositCollectionEnglish: Record<string, string> = {
 
 /** 协议别名只用于展示，不能改写原始原因码或据此改变资金状态。 */
 const collectionReasonAliases: Record<string, string> = {
-  BELOW_SWEEP_THRESHOLD: 'BELOW_THRESHOLD',
   WAITING_GAS_TOPUP: 'GAS_TOPUP_UNCONFIRMED',
   FEE_CAP_EXCEEDED: 'FEE_LIMIT_EXCEEDED',
   CHAIN_REORG_REVIEW: 'CHAIN_REVERSED',
@@ -87,6 +86,12 @@ export function depositCollectionText(key: string, translate: Translate) {
 export function depositCollectionReasonText(reason: unknown, translate: Translate): string {
   const raw = reason == null ? '' : String(reason);
   if (!raw) return '';
+  if (raw === 'BELOW_SWEEP_THRESHOLD') {
+    const key = 'v53Collection.reason.BELOW_SWEEP_THRESHOLD';
+    const translated = translate(key);
+    return translated && translated !== key && translated !== `admin.compute.${key}`
+      ? translated : 'Minimum collection amount not reached';
+  }
   const code = collectionReasonCode(raw);
   const gasReason = collectionGasReasonText(code, translate);
   if (gasReason !== undefined) return gasReason;
@@ -101,7 +106,8 @@ export function depositCollectionPresentation(resource: string, row: CollectionR
   const reason = String(row.collectionReason || '');
   const displayedReason = collectionReasonCode(reason);
   const collected = state === 'COLLECTED' && status === 'SUCCEEDED';
-  const notCollected = state === 'NOT_COLLECTED' && (['WAITING', 'QUEUED', 'CONFIRMING', 'FAILED'].includes(status) || (!status && reason === 'WAITING_BATCH'));
+  const notCollected = state === 'NOT_COLLECTED' && (['WAITING', 'QUEUED', 'CONFIRMING', 'FAILED'].includes(status)
+    || (!status && ['WAITING_BATCH', 'BELOW_SWEEP_THRESHOLD'].includes(reason)));
   const statusKey = `status.${status}`;
   const statusText = status ? (Object.hasOwn(depositCollectionEnglish, statusKey)
     ? depositCollectionText(statusKey, translate) : status) : '';

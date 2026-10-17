@@ -1,7 +1,7 @@
 // 两端共用五个入口；邀请、记录和安全等功能从首页与个人中心进入。
 export const primaryNavigation = [
   { to: "/", icon: "wap-home-o", key: "home" },
-  { to: "/token", icon: "fire-o", key: "token" },
+  { to: "/token", icon: "income-levels", key: "token" },
   { to: "/projects", icon: "cluster-o", key: "projects" },
   { to: "/wallet", icon: "balance-o", key: "wallet" },
   { to: "/profile", icon: "user-o", key: "profile" },

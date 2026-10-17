@@ -2,10 +2,10 @@ import { useSession } from '@/stores/session';
 import { money } from '@/utils/format';
 import { computed } from 'vue';
 
-/** Token只是USD展示名称；历史原币估值仅供展示，新资金换算由服务端固定。 */
+/** 默认展示 USD；历史原币估值仅供展示，新资金换算由服务端固定。 */
 export function useToken() {
   const session = useSession();
-  const unitName = computed(() => session.config?.presentation?.unitName?.trim() || 'token');
+  const unitName = computed(() => session.config?.presentation?.unitName?.trim() || 'USD');
   // 仅供含展示计价名称的既有词条调用，不处理币种代码、模型Token用量或接口数据。
   const withUnit = (text: string) => text.replace(/\bToken\b/g, () => unitName.value);
   function tokenValue(amount: unknown, currency: unknown): number | null {

@@ -79,6 +79,19 @@ describe('充值列表归集状态', () => {
     expect(dialog?.textContent).toContain('Not collected');
     expect(dialog?.textContent).toContain('Fee funding wallet has insufficient available balance');
   });
+  it('已入账但未达归集金额的充值在列表和详情展示权威原因', async () => {
+    state.page.mockResolvedValue({ records: [{ id: 1, uid: 101, username: 'member', amount: '3.5', currency: 'USDT', network: 'TRON', recordSource: 'MCAG',
+      status: 'APPROVED', paymentStatus: 'MCAG_VERIFIED', collectionState: 'NOT_COLLECTED', collectionStatus: null, collectionReason: 'BELOW_SWEEP_THRESHOLD' }], total: 1 });
+    const host=await mount('deposits');
+    const group=host.querySelector('.el-table__body .finance-review-tags');
+    expect(group?.textContent).toContain('MCAG_VERIFIED');
+    expect(group?.textContent).toContain('Not collected');
+    expect(group?.querySelector('.finance-collection-reason-tag')?.textContent).toBe('Minimum collection amount not reached');
+    const button=[...host.querySelectorAll<HTMLButtonElement>('.el-table__body button')].find(item=>item.textContent?.includes('common.details'))!;
+    button.click();await flush();
+    expect(document.body.querySelector('.el-dialog')?.textContent).toContain('Minimum collection amount not reached');
+    expect(state.page).toHaveBeenCalledTimes(1);
+  });
   it('提款沿用原状态，不展示充值归集标签', async () => {
     const host=await mount('withdrawals');
     expect(host.querySelector('.finance-collection-reason')).toBeNull();

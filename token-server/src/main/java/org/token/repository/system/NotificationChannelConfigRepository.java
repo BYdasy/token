@@ -1,5 +1,6 @@
 package org.token.repository.system;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.token.repository.dao.NotificationChannelConfigMapper;
 import org.token.model.entity.NotificationChannelConfig;
 import org.token.model.request.QueryParams;
@@ -13,6 +14,20 @@ public class NotificationChannelConfigRepository extends EntityRepository<Notifi
     public NotificationChannelConfigRepository(NotificationChannelConfigMapper mapper) { super(mapper); }
 
     public List<NotificationChannelConfig> findAllOrdered() { return mapper.findAllOrdered(); }
+    public Page<NotificationChannelConfig> findPage(int current, int size, String keyword, String channelType) {
+        var query = new LambdaQueryWrapper<NotificationChannelConfig>()
+                .eq(!channelType.isEmpty(), NotificationChannelConfig::getChannelType, channelType)
+                .and(!keyword.isEmpty(), filter -> filter.like(NotificationChannelConfig::getName, keyword)
+                        .or().like(NotificationChannelConfig::getChannelType, keyword)
+                        .or().like(NotificationChannelConfig::getDefaultRecipients, keyword))
+                .orderByDesc(NotificationChannelConfig::getId);
+        return mapper.selectPage(new Page<>(current, size), query);
+    }
+    public List<NotificationChannelConfig> findChannelOptions() {
+        return mapper.selectList(new LambdaQueryWrapper<NotificationChannelConfig>()
+                .select(NotificationChannelConfig::getId, NotificationChannelConfig::getName, NotificationChannelConfig::getChannelType)
+                .orderByDesc(NotificationChannelConfig::getId));
+    }
     public List<NotificationChannelConfig> telegram(boolean enabledOnly) { return mapper.telegram(enabledOnly); }
     public int touch(Long id,java.time.LocalDateTime now) { return mapper.touch(id,now); }
     public int replaceConfig(Long id,String previous,String next,java.time.LocalDateTime now) { return mapper.replaceConfig(id,previous,next,now); }

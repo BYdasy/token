@@ -71,7 +71,7 @@ onBeforeUnmount(() => { disposed = true; generation++; controller?.abort(); });
               <h4>{{ t('user.reward.level', { depth: rule.depth }) }}</h4>
               <dl class="vip-rebate-values">
                 <template v-for="source in vipSources" :key="source">
-                  <div v-if="rule[`${source}Enabled`]"><dt>{{ withUnit(t(`user.v21Rewards.${source}`)) }}</dt><dd>{{ money(rule[`${source}Rate`], 4) }}<small>%</small></dd></div>
+                  <div v-if="rule[`${source}Enabled`]"><dt>{{ t(`user.v21Rewards.${source}`) }}</dt><dd>{{ money(rule[`${source}Rate`], 4) }}<small>%</small></dd></div>
                 </template>
               </dl>
               <p v-if="rule.firstDepositEnabled" class="vip-rebate-note">{{ t('user.v21Rewards.firstDepositHelp') }}</p>
@@ -80,7 +80,7 @@ onBeforeUnmount(() => { disposed = true; generation++; controller?.abort(); });
                 <strong>{{ t('user.v21Rewards.conditions') }}</strong>
                 <p v-if="rule.requireEffectiveMember">{{ withUnit(t('user.v21Rewards.effectiveMember', { amount: money(rule.effectiveDepositThreshold || 0) })) }}</p>
                 <p v-if="(rule.firstDepositEnabled || rule.depositEnabled) && rule.depositCapByCompute">{{ withUnit(t('user.v21Rewards.depositCap')) }}</p>
-                <p v-if="rule.vipEnabled && rule.vipRequireComputeBalance">{{ withUnit(t('user.v21Rewards.vipBalance')) }}</p>
+                <p v-if="rule.vipEnabled && rule.vipRequireComputeBalance">{{ t('user.v21Rewards.vipBalance') }}</p>
               </div>
             </section>
           </div>

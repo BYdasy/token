@@ -128,24 +128,6 @@ public class ComputePresentationService {
         Map<String, Object> input = map(request.get("runtime"));
         Map<String, Object> runtime = fields("enabled", enabled(input.get("enabled")));
         ComputeRuntimeProjection.validate(runtime, input);
-        boolean automatic = "AUTO".equals(runtime.get("mode"));
-        for (String key : List.of("totalNodes", "activeNodes", "totalPools", "runningPools")) {
-            BigDecimal value = automatic && Set.of("activeNodes", "runningPools").contains(key) ? BigDecimal.ZERO : bounded(input.get(key));
-            if (value.stripTrailingZeros().scale() > 0) throw invalid();
-            runtime.put(key, value.longValueExact());
-        }
-        for (String key : List.of("capacity", "consumed")) runtime.put(key, automatic && "consumed".equals(key) ? "0" : bounded(input.get(key)).toPlainString());
-        if (automatic) {
-            Map<String,Object> projectionInput = new LinkedHashMap<>(runtime);
-            projectionInput.put("enabled", true);
-            Map<String,Object> projection = ComputeRuntimeProjection.project(projectionInput, java.time.Instant.now());
-            for (String key : List.of("activeNodes", "runningPools", "consumed")) runtime.put(key, projection.get(key));
-        }
-        if (number(runtime.get("activeNodes")) > number(runtime.get("totalNodes"))
-                || number(runtime.get("runningPools")) > number(runtime.get("totalPools"))
-                || decimal(runtime.get("consumed")).compareTo(decimal(runtime.get("capacity"))) > 0
-                || (number(runtime.get("activeNodes")) == 0 && (decimal(runtime.get("consumed")).signum() > 0 || number(runtime.get("runningPools")) > 0)))
-            throw new BusinessException("server.compute.ui.runtimeInvalid");
         result.put("runtime", runtime);
         Map<String, Object> valuation = map(request.get("valuation"));
         Map<String, String> asset = rates(valuation.get("assetUsdRates"), false);
@@ -240,7 +222,7 @@ public class ComputePresentationService {
     }
 
     public static Map<String, Object> defaults() {
-        return fields("defaultLanguage", "en", "autoDetectLanguage", false, "unitName", "token", "slides", List.of(),
+        return fields("defaultLanguage", "en", "autoDetectLanguage", false, "unitName", "USD", "slides", List.of(),
                 "displayGift", fields("enabled", false, "amountToken", "0"),
                 "runtime", ComputeRuntimeProjection.defaults(),
                 "valuation", fields("assetUsdRates", Map.of(), "fiatPerUsd", Map.of("USD", "1")));
@@ -263,7 +245,7 @@ public class ComputePresentationService {
     private static String displayUnitName(Object value) {
         if (value != null && !(value instanceof String)) throw invalid();
         String name = value == null ? "" : value.toString().strip();
-        if (name.isEmpty()) return "token";
+        if (name.isEmpty()) return "USD";
         if (name.codePointCount(0, name.length()) > 24
                 || name.codePoints().anyMatch(code -> Character.isISOControl(code)
                 || Character.getType(code) == Character.FORMAT)

@@ -145,7 +145,7 @@ public class ComputeMcagReceiptService {
     }
     private static Map<String,Object> snapshot(Map<String,Object> order) {
         var result=new LinkedHashMap<String,Object>();
-        for(String key:List.of("order_id","receipt_id","transfer_event_id","accounting_model","batch_id","symbol","decimals","credit_threshold","policy_version","block_height","block_hash","chain_status","current_confirmations","required_confirmations","finality_satisfied","risk_status","credit_decision","review_reason","confirmed_at","credited_at"))result.put(key,order.get(key));
+        for(String key:List.of("order_id","receipt_id","transfer_event_id","accounting_model","batch_id","collection_reason_code","symbol","decimals","credit_threshold","policy_version","block_height","block_hash","chain_status","current_confirmations","required_confirmations","finality_satisfied","risk_status","credit_decision","review_reason","confirmed_at","credited_at"))result.put(key,order.get(key));
         return result;
     }
     private static Long nullableId(Map<String,Object> row,String key){return row==null||row.get(key)==null?null:number(row.get(key));}

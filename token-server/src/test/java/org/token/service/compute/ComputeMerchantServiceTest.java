@@ -68,11 +68,52 @@ class ComputeMerchantServiceTest {
 
     @Test void nativePaginationKeepsCursorAndNumberedPagesSeparate() {
         when(client.request(anyString(), anyMap())).thenReturn(Map.of("items", List.of()));
-        service.query("fee-ledger", Map.of("page", "2", "limit", "40", "before_id", "ignored"));
+        service.query("fee-ledger", Map.of("page", "2", "limit", "20", "before_id", "ignored"));
         service.query("batches", Map.of("page", "5", "limit", "20", "before_id", "batch_last", "status", "CREDITED"));
-        verify(client).request("service-fee/ledger/query", Map.of("page", 2, "limit", 40));
+        verify(client).request("service-fee/ledger/query", Map.of("page", 2, "limit", 20));
         // 当前 Crypto 明确支持状态筛选；页码不能混入游标接口，状态条件则应完整保留。
         verify(client).request("collection-batches/query", Map.of("limit", 20, "before_id", "batch_last", "status", "CREDITED", "view", "summary"));
+    }
+
+    @Test void customerNamesUsePermanentIdentityAndNeverInferAnIdOrTrustGatewayNames() {
+        when(client.request(anyString(), anyMap())).thenReturn(Map.of("items", List.of(
+                Map.of("customer_id", "token_123_project_2", "username", "remote-name"),
+                Map.of("customer_id", "opaque-customer", "username", "remote-name"),
+                Map.of("customer_id", "token_456_project", "username", "unregistered-guess"),
+                Map.of("customer_id", "removed-customer", "username", "removed-name"),
+                Map.of("customer_id", "token_123_project_2", "merchant_id", "other", "username", "foreign-name"),
+                Map.of("customer_id", "opaque-customer", "environment", "SANDBOX", "username", "foreign-environment"))));
+        when(displayNames.merchantCustomerNames(eq("merchant_test"), eq("LIVE"), anyCollection()))
+                .thenReturn(List.of(Map.of("customerId", "token_123_project_2", "username", "current-user"),
+                        Map.of("customerId", "opaque-customer", "username", "mapped-user")));
+        var result = service.query("batches", Map.of("page", "1"));
+        var rows = (List<?>) result.get("items");
+        assertEquals("current-user", ((Map<?, ?>) rows.get(0)).get("username"));
+        assertEquals("mapped-user", ((Map<?, ?>) rows.get(1)).get("username"));
+        for (int index = 2; index < rows.size(); index++) assertFalse(((Map<?, ?>) rows.get(index)).containsKey("username"));
+        verify(displayNames).merchantCustomerNames("merchant_test", "LIVE", java.util.Set.of(
+                "token_123_project_2", "opaque-customer", "token_456_project", "removed-customer"));
+        verifyNoMoreInteractions(displayNames);
+        verifyNoInteractions(repository);
+    }
+
+    @Test void explicitCollectionPagePreservesTotalAndDoesNotSendCursor() {
+        var remote=Map.<String,Object>of("items",List.of(),"total",125L,"page",7,"limit",20);
+        when(client.request(anyString(),anyMap())).thenReturn(remote);
+        for(String resource:List.of("batches","sweeps")) {
+            assertEquals(125L,service.query(resource,Map.of("page","7","limit","20","reason_code","SWEEP_PENDING")).get("total"));
+        }
+        verify(client).request("collection-batches/query",Map.of("page",7,"limit",20,"reason_code","SWEEP_PENDING","view","summary"));
+        verify(client).request("sweeps/query",Map.of("page",7,"limit",20,"reason_code","SWEEP_PENDING"));
+        verifyNoInteractions(repository,totp);
+    }
+
+    @Test void numberedCollectionsValidatePageAndLimitBeforeRemoteCall() {
+        for(String resource:List.of("batches","sweeps")) for(var input:List.of(Map.of("page","0"),Map.of("page","1.5"),
+                Map.of("page","100001"),Map.of("page","2","limit","101"))) {
+            assertThrows(BusinessException.class,()->service.query(resource,input));
+        }
+        verifyNoInteractions(client);
     }
 
     @Test void batchDetailsProxyExactlyOnePageAndRetainReceiptPaginationMetadata() {
@@ -101,10 +142,10 @@ class ComputeMerchantServiceTest {
     @Test void resourceOrdersUseCurrentMerchantContractAndOnlyAllowedFilters() {
         var remote = Map.<String, Object>of("view", "CURRENT", "items", List.of(Map.of("request_id", "current1")), "total", 1);
         when(client.request(anyString(), anyMap())).thenReturn(remote);
-        var result = service.query("resources", Map.of("page", "2", "limit", "30", "status", "WAITING",
+        var result = service.query("resources", Map.of("page", "2", "limit", "20", "status", "WAITING",
                 "address", "TRON_address", "resource_type", "ENERGY", "start_time", "2026-10-01T00:00:00Z",
                 "merchant_id", "other", "environment", "other", "view", "LEGACY", "before_id", "ignored"));
-        verify(client).request("resource-orders/query", Map.of("page", 2, "limit", 30, "view", "CURRENT",
+        verify(client).request("resource-orders/query", Map.of("page", 2, "limit", 20, "view", "CURRENT",
                 "status", "WAITING", "address", "TRON_address", "resource_type", "ENERGY", "start_time", "2026-10-01T00:00:00Z"));
         assertSame(remote, result);
         verify(scope).requireGlobalScope();
@@ -247,8 +288,8 @@ class ComputeMerchantServiceTest {
         var fee=service.refreshFeeAddress("fee1");assertEquals("0xaddress",fee.get("address"));assertFalse(fee.containsKey("items"));assertFalse(fee.containsKey("scan_height"));
     }
     @Test void walletBillsUseActualPageSizeAndOnlyWhitelistedFilters() {
-        service.query("bills",Map.of("page","2","page_size","30","direction","OUT","start_time","2026-09-01T00:00:00Z","merchant_id","other"));
-        verify(client).request("merchant-bills/query",Map.of("page",2,"page_size",30,"direction","OUT","start_time","2026-09-01T00:00:00Z"));
+        service.query("bills",Map.of("page","2","page_size","20","direction","OUT","start_time","2026-09-01T00:00:00Z","merchant_id","other"));
+        verify(client).request("merchant-bills/query",Map.of("page",2,"page_size",20,"direction","OUT","start_time","2026-09-01T00:00:00Z"));
         verify(scope).requireGlobalScope();verifyNoInteractions(repository,displayNames,totp);
     }
 

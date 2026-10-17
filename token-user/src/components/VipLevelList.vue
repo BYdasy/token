@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onUnmounted, ref } from "vue";
 import type { Level } from "@/api/types";
 import { useToken } from "@/composables/useToken";
 
@@ -9,20 +10,82 @@ defineProps<{
   currency?: string;
 }>();
 const { tokenAmount, unitName } = useToken();
+const dragging = ref(false);
+let gesture: { element: HTMLElement; pointerId: number; x: number; y: number; scrollLeft: number } | undefined;
+let suppressClick = false;
+let clickTimer: ReturnType<typeof setTimeout> | undefined;
+function finishDrag(event?: PointerEvent) {
+  if (event && event.pointerId !== gesture?.pointerId) return;
+  const active = gesture;
+  gesture = undefined;
+  dragging.value = false;
+  window.removeEventListener('pointermove', moveDrag);
+  window.removeEventListener('pointerup', finishDrag);
+  window.removeEventListener('pointercancel', finishDrag);
+  if (active?.element.hasPointerCapture?.(active.pointerId)) active.element.releasePointerCapture(active.pointerId);
+  if (suppressClick) clickTimer = setTimeout(() => { suppressClick = false; }, 0);
+}
+function startDrag(event: PointerEvent) {
+  const element = event.currentTarget as HTMLElement;
+  if (event.pointerType !== 'mouse' || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey
+    || !window.matchMedia('(min-width: 1024px)').matches || element.scrollWidth <= element.clientWidth
+    || event.clientY >= element.getBoundingClientRect().top + element.clientHeight) return;
+  finishDrag();
+  if (clickTimer) clearTimeout(clickTimer);
+  suppressClick = false;
+  gesture = { element, pointerId: event.pointerId, x: event.clientX, y: event.clientY, scrollLeft: element.scrollLeft };
+  window.addEventListener('pointermove', moveDrag);
+  window.addEventListener('pointerup', finishDrag);
+  window.addEventListener('pointercancel', finishDrag);
+}
+function moveDrag(event: PointerEvent) {
+  const active = gesture;
+  if (!active || event.pointerId !== active.pointerId) return;
+  const distance = event.clientX - active.x;
+  if (!dragging.value) {
+    if (Math.abs(distance) < 6 || Math.abs(distance) <= Math.abs(event.clientY - active.y)) return;
+    dragging.value = true;
+    suppressClick = true;
+    active.element.setPointerCapture?.(event.pointerId);
+  }
+  event.preventDefault();
+  active.element.scrollLeft = active.scrollLeft - distance;
+}
+function guardClick(event: MouseEvent) {
+  if (!suppressClick || event.detail === 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  suppressClick = false;
+}
+function scrollWithKeys(event: KeyboardEvent) {
+  if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  const element = event.currentTarget as HTMLElement;
+  if (element.scrollWidth <= element.clientWidth) return;
+  const step = Math.max(190, element.clientWidth * .8);
+  if (event.key === 'ArrowRight') element.scrollLeft += step;
+  else if (event.key === 'ArrowLeft') element.scrollLeft -= step;
+  else if (event.key === 'Home') element.scrollLeft = 0;
+  else if (event.key === 'End') element.scrollLeft = element.scrollWidth;
+  else return;
+  event.preventDefault();
+}
+onUnmounted(() => { finishDrag(); if (clickTimer) clearTimeout(clickTimer); });
 </script>
 
 <template>
   <section class="vip-level-list" :aria-label="$t('user.nav.levels')">
     <h2 v-if="!hideHeading" class="ui-section-title">{{ $t("user.nav.levels") }}</h2>
-    <div class="vip-level-links" tabindex="0" role="region" :aria-label="$t('user.nav.levels')">
+    <div class="vip-level-links" :class="{ 'is-dragging': dragging }" tabindex="0" role="region" :aria-label="$t('user.nav.levels')"
+      @pointerdown="startDrag" @click.capture="guardClick" @keydown="scrollWithKeys" @dragstart.prevent>
       <RouterLink
         v-for="level in levels"
         :key="level.id"
         :to="`/levels/${level.id}`"
         class="card vip-level-card"
+        draggable="false"
         :class="{ current: Number(currentLevel) === Number(level.id) }"
       >
-        <img v-if="level.imageUrl" :src="level.imageUrl" alt="" class="vip-level-image" />
+        <img v-if="level.imageUrl" :src="level.imageUrl" alt="" class="vip-level-image" draggable="false" />
         <span v-else class="vip-level-image vip-level-placeholder"><van-icon name="gem-o" /></span>
         <div class="vip-level-name">
           <h3>{{ level.name }}</h3>
@@ -56,6 +119,9 @@ const { tokenAmount, unitName } = useToken();
  .vip-level-links::-webkit-scrollbar { height: 7px; }
  .vip-level-links::-webkit-scrollbar-track { border-radius: 7px; background: var(--vora-soft-surface); }
  .vip-level-links::-webkit-scrollbar-thumb { border-radius: 7px; background: var(--vora-plum); }
+ .vip-level-links, .vip-level-links .vip-level-card { cursor: grab; }
+ .vip-level-links.is-dragging { scroll-snap-type: none; user-select: none; }
+ .vip-level-links.is-dragging, .vip-level-links.is-dragging .vip-level-card { cursor: grabbing; }
  .vip-level-card { position: relative; flex: 0 0 max(190px,calc((100% - 56px) / 5)); flex-direction: column; justify-content: flex-start; gap: 14px; padding: 24px 18px; text-align: center; scroll-snap-align: start; }
  .vip-level-card.current { outline: 1px solid var(--vora-peach); outline-offset: -1px; }
  .vip-level-name { align-items: center; gap: 9px; }

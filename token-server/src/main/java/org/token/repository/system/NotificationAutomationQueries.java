@@ -31,8 +31,11 @@ public final class NotificationAutomationQueries {
         String condition=deposit?"f.status='APPROVED' AND COALESCE(f.reviewed_at,f.created_at)>=#{since}":"f.created_at>=#{since}";
         if(overdue)condition+=" AND f.status='PENDING' AND f.attention_ignored=0 AND f.created_at<=#{before}";
         else condition+=" AND "+amount+">=#{threshold}";
+        // CAST(number AS CHAR) carries the connection's implicit collation and can
+        // conflict with source_key. CONCAT with a literal remains coercible to
+        // the indexed column's collation, while preserving the exact BIGINT text.
         return "SELECT f.id,f.member_id,f.order_no,f.created_at,"+amount+" amount,m.username FROM "+table+" f JOIN compute_member m ON m.id=f.member_id LEFT JOIN compute_finance_snapshot s ON s.business_type='"+kind+"' AND s.business_id=f.id WHERE "+condition
-                +(p.containsKey("source")?" AND f.id=#{source}":" AND NOT EXISTS(SELECT 1 FROM notification_event_delivery d WHERE d.event_code=#{event} AND d.source_key=CAST(f.id AS CHAR) AND d.target_key='EVENT')")+" ORDER BY f.id LIMIT 100";
+                +(p.containsKey("source")?" AND f.id=#{source}":" AND NOT EXISTS(SELECT 1 FROM notification_event_delivery d WHERE d.event_code=#{event} AND d.source_key=CONCAT('',f.id) AND d.target_key='EVENT')")+" ORDER BY f.id LIMIT 100";
     }
     public static String eligible(Map<String,Object> p) {
         return "SELECT COUNT(*) FROM ("+candidates(p)+") eligible_event";

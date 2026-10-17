@@ -34,7 +34,8 @@ public class ComputeHomeQueryService {
             return summary;
         }).toList();
         return OperationOutcome.success(Map.of("products", list(items.get("products"), 4), "models", list(items.get("models"), 6),
-                "summaryCurrency", items.get("summaryCurrency"), "announcements", summaries,"homePopups",content.publicHomePopups(language)));
+                "partners", list(items.get("partners"), 60), "summaryCurrency", items.get("summaryCurrency"),
+                "announcements", summaries,"homePopups",content.publicHomePopups(language)));
     }
 
     @SuppressWarnings("unchecked")

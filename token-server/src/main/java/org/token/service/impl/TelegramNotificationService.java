@@ -1,11 +1,16 @@
 package org.token.service.impl;
 
 import lombok.RequiredArgsConstructor;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.token.model.request.notification.NotificationConfigPageRequest;
 import org.token.exception.BusinessException;
 import org.token.model.entity.NotificationChannelConfig;
 import org.token.model.entity.NotificationTelegramBinding;
 import org.token.model.request.notification.TelegramBindingSaveRequest;
 import org.token.model.request.notification.TelegramTemplateSendRequest;
+import org.token.model.request.notification.TelegramTemplatePreviewRequest;
+import org.token.model.request.notification.TelegramTemplateTestRequest;
+import org.token.model.response.TelegramTemplatePreviewView;
 import org.token.model.response.TelegramSendOptionsView;
 import org.token.repository.system.NotificationChannelConfigRepository;
 import org.token.repository.system.NotificationTelegramBindingRepository;
@@ -37,10 +42,15 @@ public class TelegramNotificationService {
         return bindings.findBindings(channelId, false);
     }
 
+    public Page<NotificationTelegramBinding> page(NotificationConfigPageRequest request) {
+        if (request.channelId() != null) requireChannel(request.channelId(), false);
+        return bindings.findPage(request.current(), request.size(), request.channelId(), request.keyword());
+    }
+
     public TelegramSendOptionsView sendOptions() {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
         boolean sender = authentication != null && authentication.isAuthenticated() && authentication.getAuthorities().stream()
-                .anyMatch(authority -> Set.of("60702","super").contains(authority.getAuthority()));
+                .anyMatch(authority -> Set.of("60702", "super").contains(authority.getAuthority()));
         // 基础设置仅向全局管理员提供安全选项；原通知发送权限保持原有授权语义。
         if (!sender) scope.requireGlobalScope();
         var channelOptions = channels.telegram(true).stream()
@@ -123,6 +133,43 @@ public class TelegramNotificationService {
             title = rendered.title(); content = rendered.content();
         }
         return sendBound(request.channelId(), request.targetMode(), request.bindingIds(), title, content, language);
+    }
+
+    /** 独立测试只渲染当前选中且启用的 Telegram 模板，示例变量不读取业务订单。 */
+    public TelegramTemplatePreviewView previewTemplate(TelegramTemplatePreviewRequest request, String fallbackLanguage) {
+        if (request == null || request.templateId() == null || request.templateId() <= 0)
+            throw new BusinessException("server.notification.template.notFound");
+        Map<String, String> variables = request.variables() == null ? Map.of() : request.variables();
+        if (variables.size() > 100 || variables.entrySet().stream().anyMatch(entry -> entry.getKey() == null
+                || !entry.getKey().matches("[A-Za-z][A-Za-z0-9_]{0,99}") || entry.getValue() == null || entry.getValue().length() > 2000))
+            throw new BusinessException("server.notification.template.testVariablesInvalid");
+        if (request.language() != null && (request.language().length() > 20
+                || !request.language().matches("[a-zA-Z]{2,3}(?:[-_][a-zA-Z0-9]{2,8})*")))
+            throw new BusinessException("server.notification.template.testLanguageInvalid");
+        String language = request.language() == null ? fallbackLanguage : request.language();
+        var selectedTemplate = templates.getById(request.templateId());
+        if (selectedTemplate == null || !Integer.valueOf(1).equals(selectedTemplate.getEnabled()))
+            throw new BusinessException("server.notification.template.notFound");
+        if (!"TELEGRAM".equals(selectedTemplate.getChannelType()))
+            throw new BusinessException("server.notification.channel.typeInvalid");
+        var preview = renderer.preview(selectedTemplate, language, variables);
+        if (preview == null) throw new BusinessException("server.notification.template.notFound");
+        if (!"TELEGRAM".equals(preview.rendered().channelType()))
+            throw new BusinessException("server.notification.channel.typeInvalid");
+        String content = TelegramHtmlSanitizer.sanitize(preview.rendered().content());
+        return new TelegramTemplatePreviewView("[TEST] " + Objects.toString(preview.rendered().title(), ""),
+                content.replace("\n", "<br>"), preview.variables());
+    }
+
+    public int testTemplate(TelegramTemplateTestRequest request, String fallbackLanguage) {
+        if (request == null || request.bindingId() == null || request.bindingId() <= 0)
+            throw new BusinessException("server.notification.telegram.targetsInvalid");
+        var preview = previewTemplate(request.template(), fallbackLanguage);
+        Map<String, String> variables = request.template().variables() == null ? Map.of() : request.template().variables();
+        if (preview.variables().stream().anyMatch(key -> !StringUtils.hasText(variables.get(key))))
+            throw new BusinessException("server.notification.template.testVariablesRequired");
+        return sendBound(request.channelId(), "SELECTED", List.of(request.bindingId()), preview.title(), preview.content(),
+                request.template().language() == null ? fallbackLanguage : request.template().language());
     }
 
     private NotificationChannelConfig requireChannel(Long id, boolean enabled) {

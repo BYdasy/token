@@ -26,13 +26,20 @@ describe('充值归集展示', () => {
     expect(view({ collectionState: 'COLLECTED', collectionStatus: 'SUCCEEDED', collectionReason: 'CHAIN_REVERSED' })).toMatchObject({ label: 'Collected', type: 'warning' });
   });
   it('真实门槛、补费确认与费率上限原因复用已有翻译，原原因码保持不变', () => {
-    expect(depositCollectionReasonText('BELOW_SWEEP_THRESHOLD', translate)).toBe('Collection threshold not met');
+    expect(depositCollectionReasonText('BELOW_SWEEP_THRESHOLD', translate)).toBe('Minimum collection amount not reached');
     expect(depositCollectionReasonText('WAITING_GAS_TOPUP', translate)).toBe('Waiting for fee funding to become usable');
     expect(depositCollectionReasonText('FEE_CAP_EXCEEDED', translate)).toBe('Estimated network fee exceeds the authorized limit');
-    expect(depositCollectionReasonText('BELOW_SWEEP_THRESHOLD', key => key === 'v49Merchant.depositCollection.reason.BELOW_THRESHOLD' ? '未达到归集门槛' : key)).toBe('未达到归集门槛');
+    expect(depositCollectionReasonText('BELOW_SWEEP_THRESHOLD', key => key === 'v53Collection.reason.BELOW_SWEEP_THRESHOLD' ? '未达到最低归集金额' : key)).toBe('未达到最低归集金额');
     const row = Object.freeze({ collectionState: 'NOT_COLLECTED', collectionStatus: 'WAITING', collectionReason: 'BELOW_SWEEP_THRESHOLD' });
-    expect(view(row)?.reason).toBe('Awaiting collection · Collection threshold not met');
+    expect(view(row)?.reason).toBe('Awaiting collection · Minimum collection amount not reached');
     expect(row.collectionReason).toBe('BELOW_SWEEP_THRESHOLD');
+  });
+  it('未分配批次的权威门槛原因显示未归集，并保留人工译文', () => {
+    const row = Object.freeze({ status: 'APPROVED', collectionState: 'NOT_COLLECTED', collectionReason: 'BELOW_SWEEP_THRESHOLD' });
+    expect(view(row)).toMatchObject({ label: 'Not collected', type: 'info', reason: 'Minimum collection amount not reached' });
+    expect(row.status).toBe('APPROVED');
+    expect(depositCollectionReasonText('BELOW_SWEEP_THRESHOLD', () => '人工维护的最低归集金额说明')).toBe('人工维护的最低归集金额说明');
+    expect(depositCollectionReasonText('BELOW_THRESHOLD', translate)).toBe('Collection threshold not met');
   });
   it('真实链反转和批次核查别名保留警告，不因归集成功隐藏风险', () => {
     for (const reason of ['CHAIN_REORG_REVIEW', 'CHAIN_REORG_OR_REVERTED', 'BATCH_REVIEW_REQUIRED', 'CHAIN_REVERTED', 'CHAIN_EXECUTION_UNVERIFIED']) {

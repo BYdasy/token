@@ -59,7 +59,11 @@ public final class ComputeMemberAuthenticationFilter extends OncePerRequestFilte
                 || ((HttpMethod.GET.matches(request.getMethod()) || HttpMethod.HEAD.matches(request.getMethod()))
                     && ("/api/compute/public/share".equals(path) || "/api/compute/public/share-image".equals(path)))
                 || (HttpMethod.GET.matches(request.getMethod()) && ("/api/compute/public/legal/terms".equals(path)
-                    || "/api/compute/public/legal/privacy".equals(path)))) {
+                    || "/api/compute/public/legal/privacy".equals(path)
+                    || "/api/compute/public/company-videos".equals(path)
+                    || path.matches("/api/compute/public/partner-logos/[a-z0-9-]+\\.svg")))
+                || ((HttpMethod.GET.matches(request.getMethod()) || HttpMethod.HEAD.matches(request.getMethod()))
+                    && path.matches("/api/compute/public/company-videos/[0-9]+/video"))) {
             chain.doFilter(request, response); return;
         }
         String header = request.getHeader("Authorization");

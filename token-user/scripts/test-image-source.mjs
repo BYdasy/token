@@ -113,6 +113,43 @@ test('共享品牌缺少素材文件名时显示默认品牌，合法外链仍�
   } finally { app.close(); }
 });
 
+test('Tensor AI 默认展示原图横版且有可访问名称，人工名称与图标继续优先', async () => {
+  const session = vue.reactive({ config: { siteLogo: '' }, siteName: 'Tensor AI' });
+  const Component = component(await read('../src/components/BrandMark.vue'), {
+    vue, '@/stores/session': { useSession: () => session }, '@/utils/image-source': helpers[0],
+    '@/utils/brand-assets': brandAssets,
+  }, 'tensor-brand');
+  const app = mount(Component);
+  try {
+    assert.equal(app.image().props.src, brandAssets.brandAsset('tensor-ai-logo.png'));
+    assert.equal(find(app.root, (item) => item.tag === 'a').props['aria-label'], 'Tensor AI');
+    assert.equal(find(app.root, (item) => item.tag === 'strong'), undefined);
+    session.siteName = 'Custom brand';
+    await vue.nextTick();
+    assert.equal(app.image().props.src, brandAssets.brandAsset('icon-512.png'));
+    assert.equal(find(app.root, (item) => item.tag === 'strong').text, 'Custom brand');
+    session.config.siteLogo = 'https://cdn.example/custom-brand.png';
+    await vue.nextTick();
+    assert.equal(app.image().props.src, session.config.siteLogo);
+  } finally { app.close(); }
+});
+
+test('默认资金单位为 USD，人工单位保留，币种估值不受展示名称影响', async () => {
+  const session = vue.reactive({ config: { defaultCurrency: 'USDT', presentation: { unitName: '', valuation: { assetUsdRates: {} } } } });
+  const { useToken } = evaluate(await read('../src/composables/useToken.ts'), {
+    vue, '@/stores/session': { useSession: () => session }, '@/utils/format': { money: (value) => String(value) },
+  });
+  const display = useToken();
+  assert.equal(display.unitName.value, 'USD');
+  assert.equal(display.tokenValue('12.5', 'USDT'), 12.5);
+  assert.equal(display.tokenValue('12.5', 'USDC'), 12.5);
+  assert.equal(display.tokenValue('12.5', 'USD'), 12.5);
+  session.config.presentation.unitName = ' Custom Units ';
+  assert.equal(display.unitName.value, 'Custom Units');
+  assert.equal(display.tokenValue('12.5', 'USDT'), 12.5);
+  assert.equal(display.withUnit('Balance: 12.5 Token'), 'Balance: 12.5 Custom Units');
+});
+
 test('管理端共享只读图片选择器不挂载空目录，也不改写表单原值', async () => {
   const Component = component(await read('../../token-admin/apps/web-ele/src/components/business/BusinessImagePicker.vue'), {
     vue, '@vben/access': { useAccess: () => ({ hasAccessByCodes: () => true, hasAccessByRoles: () => false }) },
@@ -140,8 +177,8 @@ test('管理端品牌和favicon按既有语义回退，正常外链保持不变'
     '@vben/preferences': { updatePreferences: (value) => { preferences = value; } }, './image-source': helpers[1],
   }, { document: { title: '', querySelector: () => favicon } });
   branding.applySiteBranding({ siteLogo: '/api/material/image/', siteIcon: '/api/material/image/' });
-  assert.equal(preferences.logo.source, '/token/exp-logo.svg');
-  assert.equal(favicon.href, '/token/favicon.svg');
+  assert.equal(preferences.logo.source, '/token/exp-logo.svg?v=20261018-tensor-ai');
+  assert.equal(favicon.href, '/token/favicon.svg?v=20261018-tensor-ai');
   branding.applySiteBranding({ siteIcon: 'https://cdn.example/icon.png' });
   assert.equal(preferences.logo.source, 'https://cdn.example/icon.png', '未设置独立logo仍复用品牌图标');
   assert.equal(favicon.href, 'https://cdn.example/icon.png');

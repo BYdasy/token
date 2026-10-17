@@ -46,13 +46,13 @@ public class TotpServiceImpl implements TotpService {
 
     @org.springframework.beans.factory.annotation.Autowired
     public TotpServiceImpl(
-            @Value("${exp.totp.issuer:duotaivora}") String issuer,
+            @Value("${exp.totp.issuer:Tensor AI}") String issuer,
             @Value("${exp.totp.encryption-key}") String encryptionKey,
             org.token.service.auth.AdminLoginSessionService loginSessions,
             org.token.repository.system.AccountTotpRepository repository
     ) {
         this.repository=repository;
-        this.issuer = StringUtils.hasText(issuer) ? issuer.trim() : "duotaivora";
+        this.issuer = StringUtils.hasText(issuer) ? issuer.trim() : "Tensor AI";
         if (!StringUtils.hasText(encryptionKey)) {
             throw new IllegalStateException("exp.totp.encryption-key 不能为空");
         }

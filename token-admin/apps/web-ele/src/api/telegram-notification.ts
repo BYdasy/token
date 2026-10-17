@@ -1,4 +1,5 @@
 import { requestClient } from './request';
+import type { SystemPageResult } from './system';
 
 export type TelegramChatType = 'CHANNEL' | 'GROUP' | 'PRIVATE';
 export interface TelegramBinding {
@@ -30,9 +31,33 @@ export type TelegramBindingSave = Omit<TelegramBinding, 'createdAt' | 'id' | 'up
 
 export const fetchTelegramBindings = (channelId?: number) =>
   requestClient.post<TelegramBinding[]>('/system/notification-config/telegram/bindings', { channelId });
+export async function fetchTelegramBindingPage(query: { channelId?: number; current?: number; size?: number; keyword?: string }): Promise<SystemPageResult<TelegramBinding>> {
+  const data = await requestClient.post<{ records: TelegramBinding[]; current: number; size: number; total: number }>(
+    '/system/notification-config/telegram/bindings/page', query,
+  );
+  return { current: Number(data.current), size: Number(data.size), total: Number(data.total), items: data.records };
+}
 export const saveTelegramBinding = (data: TelegramBindingSave) =>
   requestClient.post<TelegramBinding>('/system/notification-config/telegram/binding/save', data);
 export const fetchTelegramSendOptions = () =>
   requestClient.post<TelegramSendOptions>('/system/notification-config/telegram/send-options');
 export const sendTelegramNotification = (data: TelegramNotificationPayload) =>
   requestClient.post<{ recipientCount: number }>('/system/notification-config/template/send', data);
+
+export interface TelegramTemplatePreviewPayload {
+  templateId: number;
+  variables: Record<string, string>;
+  language: string;
+}
+export interface TelegramTemplatePreview {
+  title: string;
+  content: string;
+  variables: string[];
+}
+export const previewTelegramTemplate = (data: TelegramTemplatePreviewPayload) =>
+  requestClient.post<TelegramTemplatePreview>('/system/notification-config/template/test-preview', data);
+export const testTelegramTemplate = (data: {
+  template: TelegramTemplatePreviewPayload;
+  channelId: number;
+  bindingId: number;
+}) => requestClient.post<{ recipientCount: number }>('/system/notification-config/template/test', data);

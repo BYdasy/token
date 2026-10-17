@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { fetchCompanyFiles, type CompanyFile } from '@/api/company-files';
 import { useSession } from '@/stores/session';
 import CompanyPdfViewer from '@/components/CompanyPdfViewer.vue';
+import CompanyVideoPlayer from '@/components/CompanyVideoPlayer.vue';
 import PageState from '@/components/PageState.vue';
 import { companyFileLink } from '@/utils/company-file-link';
 
@@ -36,7 +37,8 @@ onBeforeUnmount(() => { disposed = true; ++generation; controller?.abort(); });
     <section v-if="selected" class="card company-document">
       <h2>{{ selected.fileName }}</h2>
       <a v-if="selected.resourceType === 'LINK' && companyFileLink(selected.url)" :href="companyFileLink(selected.url)" target="_blank" rel="noopener noreferrer" class="company-file-link"><van-icon name="link-o" />{{ $t('user.v24Company.openLink') }}<van-icon name="arrow" /></a>
-      <CompanyPdfViewer v-else-if="selected.resourceType !== 'LINK'" :key="`${session.token}:${selected.id}`" :file-id="selected.id" :file-name="selected.fileName" />
+      <CompanyVideoPlayer v-else-if="['VIDEO', 'VIDEO_LINK'].includes(selected.resourceType)" :key="`${session.token}:${selected.id}`" :file="selected" />
+      <CompanyPdfViewer v-else-if="selected.resourceType === 'PDF'" :key="`${session.token}:${selected.id}`" :file-id="selected.id" :file-name="selected.fileName" />
     </section>
     <section v-else class="card company-file-list">
       <template v-for="file in files" :key="file.id">
@@ -45,7 +47,7 @@ onBeforeUnmount(() => { disposed = true; ++generation; controller?.abort(); });
         <strong>{{ file.fileName }}</strong><van-icon name="arrow" />
       </a>
       <RouterLink v-else-if="file.resourceType !== 'LINK'" :to="`/company-files/${file.id}`" class="company-file-link">
-        <span class="company-pdf-icon"><van-icon name="description-o" /><small>PDF</small></span>
+        <span class="company-pdf-icon"><van-icon :name="file.resourceType === 'PDF' ? 'description-o' : 'play-circle-o'" /><small>{{ file.resourceType === 'PDF' ? 'PDF' : $t('user.tensor.video.label') }}</small></span>
         <strong>{{ file.fileName }}</strong><van-icon name="arrow" />
       </RouterLink>
       </template>

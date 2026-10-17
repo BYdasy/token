@@ -24,4 +24,10 @@ public class ComputeCompanyFileUserController {
 
     @GetMapping("/{id}/pdf")
     public ResponseEntity<Resource> pdf(@PathVariable long id) { return service.pdf(id, false); }
+
+    @GetMapping("/{id}/video")
+    public ResponseEntity<Resource> video(@PathVariable long id, jakarta.servlet.http.HttpServletRequest request) {
+        var response = service.video(id, false, false);
+        return "HEAD".equals(request.getMethod()) ? ResponseEntity.status(response.getStatusCode()).headers(response.getHeaders()).build() : response;
+    }
 }

@@ -41,9 +41,10 @@ public class ComputeSecurityConfig {
                                 "/api/compute/auth/login/email", "/api/compute/auth/login/phone",
                                 "/api/compute/auth/forgot-password", "/api/compute/auth/reset-password", "/api/compute/auth/impersonation").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/compute/public/bootstrap", "/api/compute/public/home", "/api/compute/public/runtime",
+                                "/api/compute/public/company-videos", "/api/compute/public/company-videos/*/video", "/api/compute/public/partner-logos/*.svg",
                                 "/api/compute/public/legal/terms", "/api/compute/public/legal/privacy",
                                 "/api/compute/public/share", "/api/compute/public/share-image").permitAll()
-                        .requestMatchers(HttpMethod.HEAD, "/api/compute/public/share", "/api/compute/public/share-image").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/api/compute/public/share", "/api/compute/public/share-image", "/api/compute/public/company-videos/*/video").permitAll()
                         // 仅两条 POST 回调进入独立 JOSE 校验；其他回调路径和方法均不开放。
                         .requestMatchers(HttpMethod.POST, "/api/compute/callbacks/deposit", "/api/compute/callbacks/payout").permitAll()
                         .requestMatchers("/api/compute/callbacks/**").denyAll()

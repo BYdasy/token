@@ -2,8 +2,8 @@ import { updatePreferences } from '@vben/preferences';
 import { imageSource } from './image-source';
 
 const APP_BASE_URL = import.meta.env.BASE_URL;
-const DEFAULT_FAVICON = `${APP_BASE_URL}favicon.svg`;
-const DEFAULT_LOGO = `${APP_BASE_URL}exp-logo.svg`;
+const DEFAULT_FAVICON = `${APP_BASE_URL}favicon.svg?v=20261018-tensor-ai`;
+const DEFAULT_LOGO = `${APP_BASE_URL}exp-logo.svg?v=20261018-tensor-ai`;
 
 interface SiteBranding {
   siteIcon?: string;

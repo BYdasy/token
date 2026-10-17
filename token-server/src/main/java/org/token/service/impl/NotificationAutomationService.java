@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.time.*;
 import java.util.*;
 
@@ -117,12 +118,12 @@ public class NotificationAutomationService {
                         LocalDateTime since=utc(rule.get("enabledAt")),before=ComputeData.now().minusMinutes("withdrawalOverdue".equals(event)?integer(rule.get("minutes"),1,525600):0);
                         for(var source:repository.candidates(event,since,before,"withdrawalOverdue".equals(event)?BigDecimal.ZERO:decimal(rule.get("threshold")))) {
                             try {dispatch(event,ComputeData.text(source.get("id")),rule,source,version);}
-                            catch(RuntimeException failure){log.warn("自动通知单个事件本轮失败：{}；保留未完成目标并继续其他事件",event);}
+                            catch(RuntimeException failure){log.warn("自动通知单个事件本轮失败：{}；保留未完成目标并继续其他事件；{}",event,failureDetails(failure));}
                         }
                     }
-                }catch(RuntimeException failure){log.warn("自动通知规则本轮失败：{}；不影响业务订单",event);}
+                }catch(RuntimeException failure){log.warn("自动通知规则本轮失败：{}；不影响业务订单；{}",event,failureDetails(failure));}
             }
-        }catch(RuntimeException failure){retryAt=System.currentTimeMillis()+60_000;log.warn("自动通知配置暂不可用，60秒后重试");}
+        }catch(RuntimeException failure){retryAt=System.currentTimeMillis()+60_000;log.warn("自动通知配置暂不可用，60秒后重试；{}",failureDetails(failure));}
     }
     private void scanEnergy(Map<String,Object> rule,long version) {
         if(!gateway.isEnabled())return;var client=clients.getIfAvailable();if(client==null)return;
@@ -194,7 +195,7 @@ public class NotificationAutomationService {
                 if(!claimed)continue;
                 String state="SENT";
                 try{telegram.sendBound(channel,"SELECTED",List.of(binding.getId()),rendered.title(),rendered.content(),"zh");}
-                catch(RuntimeException failure){state="FAILED";log.warn("自动通知外部投递失败：{}；已记录结果，不自动重发结果不明的消息",event);}
+                catch(RuntimeException failure){state="FAILED";log.warn("自动通知外部投递失败：{}；已记录结果，不自动重发结果不明的消息；{}",event,failureDetails(failure));}
                 String result=state;transaction.executeWithoutResult(status->repository.complete(event,sourceKey,target,result,ComputeData.now()));
             }
         }
@@ -225,5 +226,20 @@ public class NotificationAutomationService {
     static BigDecimal decimal(Object value){try{return new BigDecimal(ComputeData.text(value));}catch(NumberFormatException invalid){throw invalid();}}
     static List<Long> ids(Object value){if(!(value instanceof List<?> list)||list.size()>500)throw invalid();return list.stream().map(id->integer(id,1,Long.MAX_VALUE)).distinct().toList();}
     private static LocalDateTime utc(Object value){return LocalDateTime.ofInstant(Instant.parse(ComputeData.text(value)),ZoneOffset.UTC);}
+    /** MyBatis/HTTP exception messages may contain SQL parameters or channel credentials. */
+    static String failureDetails(Throwable failure) {
+        Set<Throwable> seen=Collections.newSetFromMap(new IdentityHashMap<>());
+        Throwable root=failure;String businessKey=null;
+        for(Throwable cause=failure;cause!=null&&seen.size()<16&&seen.add(cause);cause=cause.getCause()) {
+            root=cause;
+            if(cause instanceof SQLException sql) {
+                String state=sql.getSQLState();
+                if(state==null||!state.matches("[A-Z0-9]{5}"))state="-";
+                return "分类=DATABASE；SQLState="+state+"；数据库码="+sql.getErrorCode()+"；异常="+sql.getClass().getSimpleName();
+            }
+            if(cause instanceof BusinessException&&cause.getMessage()!=null&&cause.getMessage().matches("server\\.[A-Za-z0-9_.]{1,160}"))businessKey=cause.getMessage();
+        }
+        return "分类="+(businessKey==null?"RUNTIME":"BUSINESS")+"；异常="+root.getClass().getSimpleName()+(businessKey==null?"":"；业务键="+businessKey);
+    }
     private static BusinessException invalid(){return new BusinessException("server.notification.automation.invalid");}
 }

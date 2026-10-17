@@ -13,6 +13,9 @@ public class NotificationTemplateRepository extends EntityRepository<Notificatio
     public NotificationTemplateRepository(NotificationTemplateMapper mapper) { super(mapper); }
 
     public List<NotificationTemplate> findAllOrdered() { return mapper.findAllOrdered(); }
+    public Page<NotificationTemplate> findPage(int current, int size, String keyword, String channelType) {
+        return mapper.findPage(new Page<>(current, size), keyword, channelType);
+    }
     public NotificationTemplate findDuplicate(String code,Long excludedId) { return mapper.findDuplicate(code,excludedId); }
     public NotificationTemplate findEnabled(String code) { return mapper.findEnabled(code); }
 

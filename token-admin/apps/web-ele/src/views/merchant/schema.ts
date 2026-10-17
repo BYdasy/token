@@ -24,8 +24,8 @@ export const filters: Record<string, string[]> = {
   batches: ['batch_id', 'network_id', 'asset_id', 'status', 'sweep_status', 'reason_code', 'address', 'tx_hash'], sweeps: ['batch_id', 'network_id', 'asset_id', 'status', 'reason_code', 'address', 'tx_hash'],
   rechecks: ['merchant_recheck_id', 'network_id', 'asset_id'], resources: ['request_id', 'operation_id', 'provider_order_id', 'status', 'reason_code', 'network_id', 'address', 'resource_type', 'purpose'],
 };
-export const cursorResources = new Set(['batches', 'sweeps', 'rechecks']);
-export const pagedResources = new Set(['bills', 'fee-ledger', 'resources', 'notifications']);
+export const cursorResources = new Set(['rechecks']);
+export const pagedResources = new Set(['batches', 'sweeps', 'bills', 'fee-ledger', 'resources', 'notifications']);
 export const datedResources = new Set(['bills', 'fee-ledger', 'batches', 'sweeps', 'resources']);
 export const filterOptions: Record<string, Record<string, string[]>> = {
   bills: { direction: ['IN', 'OUT'], bill_type: ['FUNDING', 'TRANSFER', 'PAYOUT', 'SWEEP', 'GAS_TOPUP', 'NETWORK_FEE', 'UTXO_SPEND'], status: ['OBSERVED', 'CONFIRMED', 'ORPHANED'] },

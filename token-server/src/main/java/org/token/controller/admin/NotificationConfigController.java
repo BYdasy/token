@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.token.custom.LogAction;
 import org.token.model.request.notification.ChannelConfigSaveRequest;
+import org.token.model.request.notification.NotificationConfigPageRequest;
 import org.token.model.request.notification.ChannelTestRequest;
 import org.token.model.request.notification.NotificationIdRequest;
 import org.token.model.request.notification.NotificationTemplateSaveRequest;
@@ -12,6 +13,8 @@ import org.token.model.request.notification.TelegramUpdatesRequest;
 import org.token.model.request.notification.TelegramBindingListRequest;
 import org.token.model.request.notification.TelegramBindingSaveRequest;
 import org.token.model.request.notification.TelegramTemplateSendRequest;
+import org.token.model.request.notification.TelegramTemplatePreviewRequest;
+import org.token.model.request.notification.TelegramTemplateTestRequest;
 import org.token.model.response.Result;
 import org.token.tools.response.ResultFactory;
 import org.token.model.security.JwtUserPrincipal;
@@ -57,6 +60,18 @@ public class NotificationConfigController {
     @PreAuthorize(CHANNEL_READ_PERMISSION)
     public Result channelList() {
         return resultFactory.success(configService.channels());
+    }
+
+    @PostMapping("/channel/page")
+    @PreAuthorize(CHANNEL_READ_PERMISSION)
+    public Result channelPage(@Valid @RequestBody NotificationConfigPageRequest request) {
+        return resultFactory.success(configService.channelPage(request));
+    }
+
+    @PostMapping("/channel/options")
+    @PreAuthorize(CHANNEL_READ_PERMISSION)
+    public Result channelOptions() {
+        return resultFactory.success(configService.channelOptions());
     }
 
     @PostMapping("/channel/save")
@@ -105,6 +120,12 @@ public class NotificationConfigController {
         return resultFactory.success(telegramNotifications.list(request == null ? null : request.channelId()));
     }
 
+    @PostMapping("/telegram/bindings/page")
+    @PreAuthorize(CHANNEL_READ_PERMISSION)
+    public Result telegramBindingsPage(@Valid @RequestBody NotificationConfigPageRequest request) {
+        return resultFactory.success(telegramNotifications.page(request));
+    }
+
     @PostMapping("/telegram/binding/save")
     @PreAuthorize(CHANNEL_WRITE_PERMISSION)
     @LogAction(type = "Telegram接收绑定保存")
@@ -124,6 +145,23 @@ public class NotificationConfigController {
     public Result sendTelegramTemplate(@Valid @RequestBody TelegramTemplateSendRequest request,
                                       @AuthenticationPrincipal JwtUserPrincipal principal) {
         int count = telegramNotifications.send(request, principal == null ? null : principal.getLocale());
+        return resultFactory.success(java.util.Map.of("recipientCount", count));
+    }
+
+    @PostMapping("/template/test-preview")
+    @PreAuthorize(NOTIFICATION_SEND_PERMISSION)
+    public Result previewTelegramTemplate(@Valid @RequestBody TelegramTemplatePreviewRequest request,
+                                          @AuthenticationPrincipal JwtUserPrincipal principal) {
+        return resultFactory.success(telegramNotifications.previewTemplate(request,
+                principal == null ? null : principal.getLocale()));
+    }
+
+    @PostMapping("/template/test")
+    @PreAuthorize(NOTIFICATION_SEND_PERMISSION)
+    @LogAction(type = "Telegram单模板测试")
+    public Result testTelegramTemplate(@Valid @RequestBody TelegramTemplateTestRequest request,
+                                       @AuthenticationPrincipal JwtUserPrincipal principal) {
+        int count = telegramNotifications.testTemplate(request, principal == null ? null : principal.getLocale());
         return resultFactory.success(java.util.Map.of("recipientCount", count));
     }
 
@@ -157,6 +195,12 @@ public class NotificationConfigController {
     @PreAuthorize(TEMPLATE_READ_PERMISSION)
     public Result templateList() {
         return resultFactory.success(configService.templates());
+    }
+
+    @PostMapping("/template/page")
+    @PreAuthorize(TEMPLATE_READ_PERMISSION)
+    public Result templatePage(@Valid @RequestBody NotificationConfigPageRequest request) {
+        return resultFactory.success(configService.templatePage(request));
     }
 
     /** 新增模板时也能独立读取可编辑语言，不要求翻译管理权限。 */

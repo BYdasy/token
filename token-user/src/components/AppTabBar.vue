@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router';
 import { mobileNavigation as items, navigationActive } from '@/router/navigation';
+import InterfaceIcon from '@/components/InterfaceIcon.vue';
 const route = useRoute();
 const router = useRouter();
 </script>
@@ -10,9 +11,11 @@ const router = useRouter();
       v-for="item in items"
       :key="item.to"
       @click="router.push(item.to)"
-      :icon="item.icon"
       :aria-current="navigationActive(item.to, route.path) ? 'page' : undefined"
-      >{{ $t(`user.vora.nav.${item.key}`) }}</van-tabbar-item
+      ><template #icon><InterfaceIcon v-if="item.icon === 'income-levels'" name="income-levels" class="navigation-icon" /><van-icon v-else :name="item.icon" aria-hidden="true" /></template>{{ $t(`user.vora.nav.${item.key}`) }}</van-tabbar-item
     ></van-tabbar
   >
 </template>
+<style scoped>
+.navigation-icon { width: 23px; height: 23px; flex-basis: 23px; }
+</style>

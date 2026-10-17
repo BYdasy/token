@@ -1,9 +1,9 @@
 {
-  "siteUrl": "https://duotaivora.com/",
-  "sourceSettingsUrl": "https://duotaivora.com/api/system/settings/public",
-  "userSiteName": "AI Vora",
+  "siteUrl": "",
+  "sourceSettingsUrl": "",
+  "userSiteName": "Tensor AI",
   "userShareEntryUrl": "",
-  "userShareTitle": "AI Vora",
-  "userShareDescription": "A great company",
-  "userShareImage": "/api/material/image/mat_e4e6fe9f83a947448c11828c38136e49.webp"
+  "userShareTitle": "Tensor AI",
+  "userShareDescription": "Tensor AI",
+  "userShareImage": ""
 }

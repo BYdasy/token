@@ -1,7 +1,7 @@
 import { computed, onActivated, onDeactivated, onMounted, onScopeDispose, ref, shallowRef, watch } from 'vue';
 import { request } from '@/api';
 import { useSession } from '@/stores/session';
-import { runtimeSampleAt, runtimeSyncMilliseconds, runtimeTimelineAvailable, type PlatformRuntime } from '@/utils/runtimeTimeline';
+import { runtimeSampleAt, runtimeSampleMilliseconds, runtimeSyncMilliseconds, runtimeTimelineAvailable, type PlatformRuntime } from '@/utils/runtimeTimeline';
 
 // 页面往返复用已收到快照的单调时间锚点；时间戳不包含用户会话或业务数据。
 const receivedAt = new WeakMap<PlatformRuntime, number>();
@@ -39,7 +39,7 @@ export function usePlatformRuntime() {
     const elapsed = performance.now() - anchor;
     const sample = runtimeSampleAt(value, elapsed);
     if (sample && runtime.value?.updatedAt !== sample.at) {
-      runtime.value = { ...value, ...sample, updatedAt: sample.at, nextUpdateAt: new Date(Date.parse(sample.at) + (value.sampleSeconds || 2) * 1000).toISOString() };
+      runtime.value = { ...value, ...sample, updatedAt: sample.at, nextUpdateAt: new Date(Date.parse(sample.at) + runtimeSampleMilliseconds(value)).toISOString() };
     }
     playing.value = !!enabled() && runtimeTimelineAvailable(value, elapsed);
   }

@@ -31,7 +31,7 @@ public class ComputeBootstrapService {
     public Map<String, Object> bootstrap(String lang, String clientIp) {
         Map<String, String> settings = accounts.settings();
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("siteName", systemSettings.get("user.site.name", "AI Vora"));
+        response.put("siteName", systemSettings.get("user.site.name", "Tensor AI"));
         response.put("siteLogo", systemSettings.get("user.site.logo", ""));
         response.put("siteIcon", systemSettings.get("user.site.icon", ""));
         response.put("heroImage", systemSettings.get("user.site.hero-image", ""));

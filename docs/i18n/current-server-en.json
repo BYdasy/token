@@ -41,8 +41,11 @@
   "server.compute.companyFile.changed": "Another administrator has changed this document. Refresh and try again.",
   "server.compute.companyFile.invalidLink": "Enter a valid HTTP or HTTPS link without a username or password.",
   "server.compute.companyFile.invalidPdf": "Upload a valid PDF with a file name of up to 200 characters and no path or control characters.",
+  "server.compute.companyFile.invalidVideo": "Upload a valid MP4 or WebM video file",
+  "server.compute.companyFile.invalidVideoLink": "Enter a valid YouTube, Vimeo or direct HTTPS MP4/WebM video URL",
   "server.compute.companyFile.notFound": "The company document does not exist, is disabled, or is temporarily unavailable.",
   "server.compute.companyFile.tooLarge": "Company PDF files must not exceed 20 MB.",
+  "server.compute.companyFile.videoTooLarge": "The video exceeds the current upload size limit",
   "server.compute.content.audienceLocked": "The audience of published content cannot be changed. Create new content instead",
   "server.compute.content.bodyRequired": "Enter valid content for the message body",
   "server.compute.content.deliveryFailed": "Content delivery failed. Check the settings and try again. Previously delivered records will not be duplicated",
@@ -163,6 +166,7 @@
   "server.compute.transferRuleMissing": "Transfers are not enabled for this wallet direction, currency, or amount range",
   "server.compute.ui.credentialsRequired": "Enter valid current login and previous payment passwords",
   "server.compute.ui.runtimeInvalid": "Runtime figures are inconsistent: active values or consumption exceed totals, or work is running without active nodes",
+  "server.compute.ui.runtimeMetricsInvalid": "Invalid runtime configuration: check compute capacity, value ranges, GPU counts, and time intervals.",
   "server.compute.ui.settingsInvalid": "Invalid user display settings. Check language, image URLs, numbers and rates",
   "server.compute.ui2.teamDateRange": "Team trend dates must be valid and span no more than 93 calendar days.",
   "server.compute.unknownJob": "The background task type is not recognized",
@@ -376,5 +380,8 @@
   "server.v36.analytics.timeRange": "Select valid start and end times to the second, spanning no more than 93 calendar days. The start must not follow the end. Avoid ambiguous or nonexistent daylight-saving times in the system time zone.",
   "server.v6.analytics.dateRange": "Select a valid date range of no more than 93 calendar days.",
   "server.v6.messages.sourceRequired": "Complete the Chinese source title and body.",
-  "server.v7.translation.systemTemplateProtected": "Fixed system notification keys can only be edited in notification template 6. They cannot be created, deleted, or assigned a different content format."
+  "server.v7.translation.systemTemplateProtected": "Fixed system notification keys can only be edited in notification template 6. They cannot be created, deleted, or assigned a different content format.",
+  "server.notification.template.testVariablesInvalid": "Invalid test variables",
+  "server.notification.template.testLanguageInvalid": "Invalid test language",
+  "server.notification.template.testVariablesRequired": "Complete all template test variables"
 }

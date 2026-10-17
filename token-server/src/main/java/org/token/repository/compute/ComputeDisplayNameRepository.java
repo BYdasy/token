@@ -21,4 +21,10 @@ public class ComputeDisplayNameRepository {
     public List<Map<String, Object>> memberNames(Collection<Long> ids) {
         return ComputeData.normalizeRows(mapper.memberNames(ids));
     }
+
+    /** 商户客户号只按已登记永久归属显示姓名，不从文本推导会员编号。 */
+    public List<Map<String, Object>> merchantCustomerNames(String merchantId, String environment, Collection<String> customerIds) {
+        if (customerIds.isEmpty()) return List.of();
+        return ComputeData.normalizeRows(mapper.merchantCustomerNames(merchantId, environment, customerIds));
+    }
 }

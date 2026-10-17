@@ -8,6 +8,9 @@ import org.apache.ibatis.annotations.*;
 /** ComputeCatalogService 的参数化数据库语句。 */
 @Mapper
 public interface ComputeCatalogMapper {
+    @Select("SELECT id,code,name,image_url FROM compute_provider WHERE enabled=1 AND image_url<>'' ORDER BY id LIMIT 60")
+    List<Map<String,Object>> homePartners();
+
     @Select("SELECT id,name,auto_upgrade_enabled FROM compute_level ORDER BY id")
     List<Map<String,Object>> vipSettings();
 
@@ -16,9 +19,6 @@ public interface ComputeCatalogMapper {
 
     @Select("SELECT * FROM compute_product WHERE enabled=1 AND type='GPU' ORDER BY id")
     List<Map<String, Object>> catalogProductRows(@Param("args") Object[] args);
-
-    @Select("SELECT * FROM compute_product WHERE enabled=1 AND type='GPU' ORDER BY id LIMIT 4")
-    List<Map<String, Object>> homeCatalogProductRows(@Param("args") Object[] args);
 
     @Select("SELECT m.*,p.name AS provider,'USD' AS price_currency FROM compute_model m JOIN compute_provider p ON p.id=m.provider_id WHERE m.enabled=1 AND p.enabled=1 ORDER BY m.id LIMIT #{args[0]}")
     List<Map<String, Object>> publicModelsModelRows(@Param("args") Object[] args);

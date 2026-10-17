@@ -77,7 +77,7 @@ const fallbackImage = `${import.meta.env.BASE_URL}images/vora/projects.png`;
           </dl>
           <div v-if="product.type === 'GPU' && (Number(product.maxPurchaseAmount) > 0 || Number(product.maxPurchaseQuantity) > 0)" class="product-limit-summary">
             <p>{{ $t('user.v18Product.lifetimeLimit') }}</p>
-            <p v-if="Number(product.maxPurchaseAmount) > 0">{{ $t('user.v18Product.amountLimit', { limit: money(product.maxPurchaseAmount) }) }}</p>
+            <p v-if="Number(product.maxPurchaseAmount) > 0">{{ withUnit($t('user.v18Product.amountLimit', { limit: money(product.maxPurchaseAmount) })) }}</p>
             <p v-if="Number(product.maxPurchaseQuantity) > 0">{{ $t('user.v18Product.quantityLimit', { limit: product.maxPurchaseQuantity }) }}</p>
           </div>
         </section>

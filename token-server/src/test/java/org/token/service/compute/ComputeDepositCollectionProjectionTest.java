@@ -41,6 +41,39 @@ class ComputeDepositCollectionProjectionTest {
         assertEquals(Map.of(),missing.get("collectionDetails"));assertUnchangedFunds(missing);
     }
 
+    @Test void sameVersionRefreshProjectsAuthoritativeMinimumWithoutRecrediting() {
+        Object originalVersion=order.get("resource_version");
+        assertEquals("WAITING_BATCH",view().get("collectionReason"));
+        order.put("collection_reason_code","BELOW_SWEEP_THRESHOLD");applyOrder();
+        var waiting=view();assertEquals("NOT_COLLECTED",waiting.get("collectionState"));
+        assertEquals("BELOW_SWEEP_THRESHOLD",waiting.get("collectionReason"));assertNull(waiting.get("collectionStatus"));
+        assertEquals("BELOW_SWEEP_THRESHOLD",fixture.data.jsonMap(fixture.data.one("SELECT snapshot_json FROM compute_mcag_deposit_order").get("snapshotJson")).get("collection_reason_code"));
+        assertEquals(originalVersion,order.get("resource_version"));assertUnchangedFunds(waiting);
+        // 门槛或可归集金额变化时，同版本的权威查询必须清除旧原因，不能再次入账。
+        order.put("collection_reason_code",null);applyOrder();
+        assertEquals("WAITING_BATCH",view().get("collectionReason"));assertUnchangedFunds(view());
+        order.put("collection_reason_code","BELOW_SWEEP_THRESHOLD");applyOrder();
+        order.remove("collection_reason_code");applyOrder();
+        assertEquals("WAITING_BATCH",view().get("collectionReason"));assertUnchangedFunds(view());
+    }
+
+    @Test void explicitBatchAndMissingSnapshotOutrankAnOldMinimumReason() {
+        order.put("collection_reason_code","BELOW_SWEEP_THRESHOLD");order.put("batch_id","batch1");applyOrder();
+        assertEquals("SYNC_PENDING",view().get("collectionReason"));
+        var batch=receipt.batch("RECEIPT_SWEEP");batch.put("sweep_status","SUCCEEDED");applyBatch(batch);
+        assertEquals("COLLECTED",view().get("collectionState"));assertEquals("",view().get("collectionReason"));
+        var stored=new LinkedHashMap<>(fixture.data.jsonMap(fixture.data.one("SELECT snapshot_json FROM compute_mcag_deposit_order").get("snapshotJson")));
+        stored.remove("batch_id");fixture.jdbc.update("UPDATE compute_mcag_deposit_order SET snapshot_json=?",fixture.data.json(stored));
+        assertEquals("UNKNOWN",view().get("collectionState"));assertEquals("SYNC_PENDING",view().get("collectionReason"));
+        assertUnchangedFunds(view());
+    }
+
+    @Test void unknownReadinessReasonDoesNotGuessThresholdFromAmount() {
+        order.put("collection_reason_code","FUTURE_REASON");applyOrder();
+        assertEquals("NOT_COLLECTED",view().get("collectionState"));assertEquals("WAITING_BATCH",view().get("collectionReason"));
+        assertUnchangedFunds(view());
+    }
+
     @Test void batchReasonSurvivesBeforeExecutionAndTakesPriorityOverOperationReason() {
         order.put("batch_id","batch1");applyOrder();
         var batch=receipt.batch("RECEIPT_SWEEP");batch.remove("collection");batch.put("reason_code","SERVICE_FEE_PENDING");applyBatch(batch);

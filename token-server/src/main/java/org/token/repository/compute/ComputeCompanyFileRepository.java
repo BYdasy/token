@@ -41,6 +41,14 @@ public class ComputeCompanyFileRepository {
         return ComputeData.normalizeRows(mapper.pdfFile(id, admin));
     }
 
+    public List<Map<String, Object>> homepageVideos() {
+        return ComputeData.normalizeRows(mapper.homepageVideos());
+    }
+
+    public List<Map<String, Object>> videoFile(long id, boolean admin, boolean homepage) {
+        return ComputeData.normalizeRows(mapper.videoFile(id, admin, homepage));
+    }
+
     public Long countAdminFiles(String keyword, Integer enabled) {
         return mapper.countAdminFiles(keyword, enabled);
     }

@@ -45,14 +45,26 @@ const giftAmountError = computed(() => {
   return whole.length > 13 || (whole.length === 13 && (whole !== '1000000000000' || /[1-9]/.test(match[2] || '')))
     ? c('v19Gift.amountInvalid') : '';
 });
-const runtimeKeys = computed(() => [
-  'totalNodes',
-  'activeNodes',
-  'totalPools',
-  'runningPools',
-  'capacity',
-  'consumed',
-].filter(key => model.runtime?.mode !== 'AUTO' || !['activeNodes', 'runningPools', 'consumed'].includes(key)));
+const runtimeError = computed(() => {
+  const runtime = model.runtime;
+  if (!runtime) return '';
+  const decimal = (value: unknown, precision: number) => {
+    const number = Number(value);
+    return value !== null && value !== '' && Number.isFinite(number) && number >= 0 && number <= 1000000000000
+      && Math.abs(number * 10 ** precision - Math.round(number * 10 ** precision)) < 0.00001;
+  };
+  const automatic = runtime.mode === 'AUTO';
+  const amounts = automatic ? ['totalExaflops', 'exaflopsMin', 'exaflopsMax'] : ['totalExaflops', 'exaflops'];
+  const integers = automatic ? ['onlineGpusMin', 'onlineGpusMax'] : ['onlineGpus'];
+  if (amounts.some(key => !decimal(runtime[key], 2)) || integers.some(key => !decimal(runtime[key], 0))) return c('runtimeDisplay.invalid');
+  if (automatic) {
+    if (Number(runtime.exaflopsMin) > Number(runtime.exaflopsMax) || Number(runtime.exaflopsMax) > Number(runtime.totalExaflops)
+      || Number(runtime.onlineGpusMin) > Number(runtime.onlineGpusMax)
+      || !Number.isInteger(runtime.changeSeconds) || runtime.changeSeconds < 1 || runtime.changeSeconds > 300
+      || !Number.isInteger(runtime.refreshSeconds) || runtime.refreshSeconds < 10 || runtime.refreshSeconds > 300) return c('runtimeDisplay.invalid');
+  } else if (Number(runtime.exaflops) > Number(runtime.totalExaflops)) return c('runtimeDisplay.invalid');
+  return '';
+});
 async function reloadRates() {
   if (!loaded.value || loading.value || saving.value) return;
   const current = requestVersion;
@@ -74,7 +86,7 @@ async function load() {
     const data = await fetchUserPresentationSettings();
     if (disposed || current !== requestVersion) return;
     Object.assign(model, data, {
-      unitName: String(data.unitName ?? ''),
+      unitName: String(data.unitName ?? 'USD'),
       displayGift: {
         enabled: data.displayGift?.enabled === true,
         amountToken: String(data.displayGift?.amountToken ?? '0'),
@@ -91,6 +103,10 @@ async function save() {
   if (!writable.value || saving.value || loading.value || !loaded.value) return;
   if (giftAmountError.value) {
     ElMessage.warning(giftAmountError.value);
+    return;
+  }
+  if (runtimeError.value) {
+    ElMessage.warning(runtimeError.value);
     return;
   }
   const current = ++requestVersion;
@@ -135,7 +151,7 @@ onScopeDispose(() => { disposed = true; ++requestVersion; });
     <ElCard v-if="loaded" shadow="never">
       <ElForm label-position="top" :disabled="!writable || saving">
         <ElFormItem :label="c('ui.unitName')">
-          <ElInput v-model="model.unitName" maxlength="24" placeholder="token" class="setting-input" />
+          <ElInput v-model="model.unitName" maxlength="24" placeholder="USD" class="setting-input" />
           <p class="setting-hint">{{ c('ui.unitNameHint') }}</p>
         </ElFormItem>
         <ElFormItem :label="c('ui.defaultLanguage')">
@@ -159,7 +175,7 @@ onScopeDispose(() => { disposed = true; ++requestVersion; });
           </ElFormItem>
           <ElFormItem :label="c('v19Gift.amount')" :error="giftAmountError">
             <ElInput v-model="model.displayGift.amountToken" inputmode="decimal" maxlength="22" placeholder="0" class="setting-input">
-              <template #append>{{ model.unitName?.trim() || 'token' }}</template>
+              <template #append>{{ model.unitName?.trim() || 'USD' }}</template>
             </ElInput>
           </ElFormItem>
         </div>
@@ -185,29 +201,30 @@ onScopeDispose(() => { disposed = true; ++requestVersion; });
           >{{ c('common.create') }}</ElButton
         >
         <h3>{{ c('ui.runtime') }}</h3>
-        <ElAlert :title="c('ui.runtimeHint')" type="info" :closable="false" />
+        <ElAlert :title="c('runtimeDisplay.metricsHint')" type="info" :closable="false" />
         <ElFormItem :label="c('field.enabled')"
           ><ElSwitch v-model="model.runtime.enabled"
         /></ElFormItem>
         <ElFormItem :label="c('v12.runtime.mode')"><ElSelect v-model="model.runtime.mode" class="setting-input"><ElOption value="AUTO" :label="c('v12.runtime.auto')" /><ElOption value="MANUAL" :label="c('v12.runtime.manual')" /></ElSelect></ElFormItem>
+        <ElFormItem :label="c('runtimeDisplay.totalExaflops')">
+          <ElInputNumber :model-value="Number(model.runtime.totalExaflops)" :min="0" :max="1000000000000" :precision="2" :step="0.1" @update:model-value="model.runtime.totalExaflops = $event" />
+        </ElFormItem>
         <template v-if="model.runtime.mode === 'AUTO'">
-          <ElAlert :title="c('runtimeDisplay.help')" type="info" :closable="false" />
+          <ElAlert :title="c('runtimeDisplay.timelineHint')" type="info" :closable="false" />
           <div class="runtime-grid">
-            <ElFormItem v-for="key in ['activeMinPercent', 'activeMaxPercent', 'usageMinPercent', 'usageMaxPercent']" :key="key" :label="c(`v12.runtime.${key}`)"><ElInputNumber v-model="model.runtime[key]" :min="0" :max="100" :precision="2" /></ElFormItem>
+            <ElFormItem :label="c('runtimeDisplay.exaflopsMin')"><ElInputNumber :model-value="Number(model.runtime.exaflopsMin)" :min="0" :max="Number(model.runtime.totalExaflops)" :precision="2" :step="0.01" @update:model-value="model.runtime.exaflopsMin = $event" /></ElFormItem>
+            <ElFormItem :label="c('runtimeDisplay.exaflopsMax')"><ElInputNumber :model-value="Number(model.runtime.exaflopsMax)" :min="0" :max="Number(model.runtime.totalExaflops)" :precision="2" :step="0.01" @update:model-value="model.runtime.exaflopsMax = $event" /></ElFormItem>
+            <ElFormItem :label="c('runtimeDisplay.onlineGpusMin')"><ElInputNumber v-model="model.runtime.onlineGpusMin" :min="0" :max="1000000000000" :precision="0" /></ElFormItem>
+            <ElFormItem :label="c('runtimeDisplay.onlineGpusMax')"><ElInputNumber v-model="model.runtime.onlineGpusMax" :min="0" :max="1000000000000" :precision="0" /></ElFormItem>
+            <ElFormItem :label="c('runtimeDisplay.changeSeconds')"><ElInputNumber v-model="model.runtime.changeSeconds" :min="1" :max="300" :precision="0" /></ElFormItem>
             <ElFormItem :label="c('runtimeDisplay.syncSeconds')"><ElInputNumber v-model="model.runtime.refreshSeconds" :min="10" :max="300" :precision="0" /></ElFormItem>
           </div>
         </template>
-        <div class="runtime-grid">
-          <ElFormItem v-for="key in runtimeKeys" :key="key" :label="c(`ui.${key}`)">
-            <ElInputNumber
-              :model-value="Number(model.runtime[key])"
-              :min="0"
-              :max="1000000000000"
-              :precision="0"
-              @update:model-value="model.runtime[key] = $event ?? 0"
-            />
-          </ElFormItem>
+        <div v-else class="runtime-grid">
+          <ElFormItem :label="c('runtimeDisplay.exaflops')"><ElInputNumber :model-value="Number(model.runtime.exaflops)" :min="0" :max="Number(model.runtime.totalExaflops)" :precision="2" :step="0.01" @update:model-value="model.runtime.exaflops = $event" /></ElFormItem>
+          <ElFormItem :label="c('runtimeDisplay.onlineGpus')"><ElInputNumber v-model="model.runtime.onlineGpus" :min="0" :max="1000000000000" :precision="0" /></ElFormItem>
         </div>
+        <ElAlert v-if="runtimeError" :title="runtimeError" type="error" :closable="false" />
       </ElForm>
       <ElButton v-if="writable" type="primary" :disabled="!loaded || loading" :loading="saving" @click="save">
         {{ c('common.save') }}

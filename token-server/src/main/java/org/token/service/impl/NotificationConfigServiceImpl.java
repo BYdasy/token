@@ -2,6 +2,9 @@ package org.token.service.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.token.model.request.notification.NotificationConfigPageRequest;
+import org.token.model.response.NotificationChannelOptionView;
 import lombok.RequiredArgsConstructor;
 import org.token.repository.system.NotificationChannelConfigRepository;
 import org.token.repository.system.NotificationTemplateRepository;
@@ -94,6 +97,19 @@ public class NotificationConfigServiceImpl implements NotificationConfigService 
     public List<NotificationChannelView> channels() {
         List<NotificationChannelConfig> records = channelRepository.findAllOrdered();
         return records == null ? List.of() : records.stream().map(this::toView).toList();
+    }
+
+    @Override
+    public Page<NotificationChannelView> channelPage(NotificationConfigPageRequest request) {
+        var page = channelRepository.findPage(request.current(), request.size(), request.keyword(), request.channelType());
+        return new Page<NotificationChannelView>(page.getCurrent(), page.getSize(), page.getTotal())
+                .setRecords(page.getRecords().stream().map(this::toView).toList());
+    }
+
+    @Override
+    public List<NotificationChannelOptionView> channelOptions() {
+        return channelRepository.findChannelOptions().stream()
+                .map(channel -> new NotificationChannelOptionView(channel.getId(), channel.getName(), channel.getChannelType())).toList();
     }
 
     @Override
@@ -428,6 +444,13 @@ public class NotificationConfigServiceImpl implements NotificationConfigService 
     public List<NotificationTemplateView> templates() {
         List<NotificationTemplate> records = templateRepository.findAllOrdered();
         return toTemplateViews(records == null ? List.of() : records);
+    }
+
+    @Override
+    public Page<NotificationTemplateView> templatePage(NotificationConfigPageRequest request) {
+        var page = templateRepository.findPage(request.current(), request.size(), request.keyword(), request.channelType());
+        return new Page<NotificationTemplateView>(page.getCurrent(), page.getSize(), page.getTotal())
+                .setRecords(toTemplateViews(page.getRecords()));
     }
 
     @Override

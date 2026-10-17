@@ -4,17 +4,19 @@ import { computed } from 'vue';
 import { imageSource } from '@/utils/image-source';
 import { brandAsset } from '@/utils/brand-assets';
 const session = useSession();
-const logo = computed(() => imageSource(session.config?.siteLogo) || brandAsset('icon-512.png'));
+const customLogo = computed(() => imageSource(session.config?.siteLogo));
+const useWordmark = computed(() => !customLogo.value && session.siteName === 'Tensor AI');
+const logo = computed(() => customLogo.value || brandAsset(useWordmark.value ? 'tensor-ai-logo.png' : 'icon-512.png'));
 </script>
 <template>
-  <RouterLink class="brand" to="/"
+  <RouterLink class="brand" :class="{ 'brand-wordmark': useWordmark }" to="/" :aria-label="session.siteName"
     ><img
       :src="logo"
-      width="42"
-      height="42"
+      :width="useWordmark ? 180 : 42"
+      :height="useWordmark ? 60 : 42"
       class="brand-mark brand-image"
       alt=""
-    /><span class="brand-copy"
+    /><span v-if="!useWordmark" class="brand-copy"
       ><strong>{{ session.siteName }}</strong
       ></span
     ></RouterLink
@@ -33,6 +35,7 @@ const logo = computed(() => imageSource(session.config?.siteLogo) || brandAsset(
   min-width: 0;
 }
 .brand { gap: 9px; color: var(--vora-primary); }
+.brand-wordmark .brand-image { width: 180px; height: 60px; flex: 0 1 180px; }
 .brand-copy strong { font-family: 'Vora Display', Georgia, 'Noto Serif SC', serif; font-size: 27px; font-weight: 600; letter-spacing: -.02em; }
 .brand-copy strong,
 .brand-copy small {
@@ -47,6 +50,7 @@ const logo = computed(() => imageSource(session.config?.siteLogo) || brandAsset(
     height: 34px;
     flex-basis: 34px;
   }
+  .brand-wordmark .brand-image { width: 144px; height: 48px; flex-basis: 144px; }
 }
 @media (max-width: 700px) {
   .brand-copy small { display: none; }
