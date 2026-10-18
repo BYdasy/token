@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import type { UserPresentation } from '@/api/presentation';
 import type { Wallet } from '@/api/types';
 import { money } from '@/utils/format';
@@ -9,7 +9,7 @@ import { useToken } from '@/composables/useToken';
 const { unitName } = useToken();
 import FiatSwitch from './FiatSwitch.vue';
 const props = defineProps<{ presentation?: UserPresentation; wallets?: Wallet[]; compact?: boolean; conversion?: boolean }>();
-const visible = ref(true);
+const visible = defineModel<boolean>('visible', { default: true });
 const session = useSession();
 const { approximate } = useDisplayCurrency();
 const assets = computed(() => props.presentation?.assets);

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { finiteTranslationReferences } from './TranslationFiniteReferences.mjs';
 import { runtimeTranslationContracts } from './TranslationRuntimeContracts.mjs';
+import { translationParameters } from './TranslationParameters.mjs';
 
 // 离线审计当前中英基线与生产源码；不读历史SQL、不连接数据库、不生成或执行SQL。
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -130,18 +131,22 @@ const compiledDynamics = dynamics.map(item => ({...item, regex: new RegExp(item.
 const required = [...allKnown].sort(compare).map(key => ({key, references: references.get(key) || [], dynamics: compiledDynamics.filter(item => item.regex.test(key)).map(({regex,...item}) => item)}))
   .filter(item => !item.key.startsWith('user.systemMessage.') && (item.references.length || item.dynamics.length));
 const missing = required.flatMap(item => ['zh','en'].filter(language => !baseline.has(language + ':' + item.key)).map(language => ({key:item.key,language,references:item.references,dynamics:item.dynamics})));
-const placeholders = value => [...new Set([...value.matchAll(/\{[A-Za-z0-9_]+\}/g)].map(match => match[0]))].sort(compare).join('|');
-const parity = [], placeholderMismatches = [];
+const parity = [], placeholderMismatches = [], invalidPlaceholderSyntax = [];
 for (const key of [...new Set([...baseline.keys()].map(key => key.slice(key.indexOf(':')+1)))].sort(compare)) {
   const zh = baseline.get('zh:' + key), en = baseline.get('en:' + key);
   if (!zh || !en) parity.push({key,missingLanguage:zh?'en':'zh'});
-  else if (placeholders(zh.value) !== placeholders(en.value)) placeholderMismatches.push({key,zh:placeholders(zh.value),en:placeholders(en.value)});
+  else {
+    const chinese = translationParameters(zh.value), english = translationParameters(en.value);
+    if (chinese.parameters.join('|') !== english.parameters.join('|')) placeholderMismatches.push({key,zh:chinese.parameters.join('|'),en:english.parameters.join('|')});
+    if (!chinese.valid) invalidPlaceholderSyntax.push({key,language:'zh',source:zh.source});
+    if (!english.valid) invalidPlaceholderSyntax.push({key,language:'en',source:en.source});
+  }
 }
-const summary = {sourceFiles:sourceFiles.length,baselineEntries:baseline.size,requiredKeys:required.length,missing:missing.length,languageParityGaps:parity.length,invalidBaseline:invalidBaseline.length,placeholderMismatches:placeholderMismatches.length,unresolvedDynamicExpressions:finite.unresolved.length};
+const summary = {sourceFiles:sourceFiles.length,baselineEntries:baseline.size,requiredKeys:required.length,missing:missing.length,languageParityGaps:parity.length,invalidBaseline:invalidBaseline.length,placeholderMismatches:placeholderMismatches.length,invalidPlaceholderSyntax:invalidPlaceholderSyntax.length,unresolvedDynamicExpressions:finite.unresolved.length};
 const output = path.resolve(root,outputDir);
 if (!(output === root || output.startsWith(root + path.sep))) throw new Error('审计输出必须位于工作区');
 mkdirSync(output,{recursive:true});
-writeFileSync(path.join(output,'audit.json'),JSON.stringify({summary,missing,parity,invalidBaseline,placeholderMismatches,unresolved:finite.unresolved,required},null,2)+'\n','utf8');
+writeFileSync(path.join(output,'audit.json'),JSON.stringify({summary,missing,parity,invalidBaseline,placeholderMismatches,invalidPlaceholderSyntax,unresolved:finite.unresolved,required},null,2)+'\n','utf8');
 writeFileSync(path.join(output,'missing.json'),JSON.stringify(missing,null,2)+'\n','utf8');
 writeFileSync(path.join(output,'retention.json'),JSON.stringify({
   schemaVersion: 1,
@@ -154,4 +159,4 @@ writeFileSync(path.join(output,'retention.json'),JSON.stringify({
   deletionRule: '仅可将数据库(type,key)固定白名单作为清理候选；需合并实际菜单/配置/通知模板引用并排除所有未解析动态边界，不能仅以不在requiredKeys判为未使用。',
 },null,2)+'\n','utf8');
 console.log(JSON.stringify(summary,null,2));
-if (check && (missing.length || parity.length || invalidBaseline.length || placeholderMismatches.length)) process.exitCode=1;
+if (check && (missing.length || parity.length || invalidBaseline.length || placeholderMismatches.length || invalidPlaceholderSyntax.length)) process.exitCode=1;

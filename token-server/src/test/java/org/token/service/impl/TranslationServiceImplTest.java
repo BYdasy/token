@@ -17,6 +17,8 @@ import org.token.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -133,6 +135,91 @@ class TranslationServiceImplTest {
         verify(translationMapper,times(2)).findLanguageCandidates("server.success",1,List.of("es-mx","es","en"));
     }
 
+    @Test void serverMessageSkipsMissingOrExtraParametersAndKeepsBaseThenEnglishFallback() {
+        when(localeResolver.resolve("es-MX")).thenReturn("es-mx");
+        when(localeResolver.lookupCandidates("es-mx")).thenReturn(List.of("es-mx", "es", "en"));
+        when(localeResolver.normalize(any())).thenAnswer(call -> call.getArgument(0));
+        Translation broken = translation("server.example", "es-mx", "人工译文遗漏订单号 {{unknown}}", 1);
+        Translation english = translation("server.example", "en", "Order {{orderNo}}: {{amount}}", 1);
+        when(translationMapper.findLanguageCandidates("server.example", 1, List.of("es-mx", "es", "en")))
+                .thenReturn(
+                        List.of(broken, translation("server.example", "es", "Base {{amount}} / {{orderNo}}", 1), english),
+                        List.of(broken, translation("server.example", "es", "Missing {{amount}}", 1), english),
+                        List.of(translation("server.example", "es-mx", "Local {{amount}} / {{orderNo}} / {{amount}}", 1), english));
+
+        assertEquals("Base {{amount}} / {{orderNo}}", service.getTranslate("server.example", "es-MX"));
+        assertEquals("Order {{orderNo}}: {{amount}}", service.getTranslate("server.example", "es-MX"));
+        assertEquals("Local {{amount}} / {{orderNo}} / {{amount}}", service.getTranslate("server.example", "es-MX"));
+        assertEquals("人工译文遗漏订单号 {{unknown}}", broken.getTvalue());
+        verify(translationMapper, times(3)).findLanguageCandidates("server.example", 1, List.of("es-mx", "es", "en"));
+        verify(translationMapper, never()).insert(any(Translation.class));
+        verify(translationMapper, never()).updateById(any(Translation.class));
+    }
+
+    @Test void serverMessageKeepsExistingBehaviorWithoutEnglishAndRejectsUnknownParametersAgainstPlainEnglish() {
+        when(localeResolver.resolve("es")).thenReturn("es");
+        when(localeResolver.lookupCandidates("es")).thenReturn(List.of("es", "en"));
+        when(localeResolver.normalize(any())).thenAnswer(call -> call.getArgument(0));
+        when(translationMapper.findLanguageCandidates("server.example", 1, List.of("es", "en")))
+                .thenReturn(
+                        List.of(translation("server.example", "es", "Manual {local}", 1)),
+                        List.of(translation("server.example", "es", "Manual {local}", 1), translation("server.example", "en", "", 1)),
+                        List.of(translation("server.example", "es", "Correcto", 1), translation("server.example", "en", "Success", 1)),
+                        List.of(translation("server.example", "es", "Unexpected {amount}", 1), translation("server.example", "en", "Success", 1)),
+                        List.of(translation("server.example", "es", "Wrong {orderNo}", 1), translation("server.example", "en", "Order {{orderNo}}", 1)));
+        assertEquals("Manual {local}", service.getTranslate("server.example", "es"));
+        assertEquals("Manual {local}", service.getTranslate("server.example", "es"));
+        assertEquals("Correcto", service.getTranslate("server.example", "es"));
+        assertEquals("Success", service.getTranslate("server.example", "es"));
+        assertEquals("Order {{orderNo}}", service.getTranslate("server.example", "es"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {5, 7})
+    void bundlesUseEnglishParameterContractWithoutOverwritingSavedTranslations(int type) {
+        String prefix = type == 5 ? "admin." : "user.";
+        when(localeResolver.resolve("es-MX")).thenReturn("es-mx");
+        when(localeResolver.lookupCandidates("es-mx")).thenReturn(List.of("es-mx", "es", "en"));
+        if (type == 5) when(localeResolver.enabledLanguages()).thenReturn(List.of(new I18nLanguageOption("English", "en")));
+        Translation brokenExact = translation(prefix + "baseFallback", "es-mx", "Manual no amount", type);
+        when(translationMapper.findBundle(type, "en", prefix)).thenReturn(List.of(
+                translation(prefix + "baseFallback", "en", "Amount {amount}", type),
+                translation(prefix + "englishFallback", "en", "Order {orderNo} / {amount}", type),
+                translation(prefix + "reordered", "en", "{amount} / {currency}", type),
+                translation(prefix + "plain", "en", "Success", type),
+                translation(prefix + "unknown", "en", "Success", type),
+                translation(prefix + "blankEnglish", "en", "", type),
+                translation(prefix + "numeric", "en", "Value {0}", type)));
+        when(translationMapper.findBundle(type, "es", prefix)).thenReturn(List.of(
+                translation(prefix + "baseFallback", "es", "Base {amount}", type),
+                translation(prefix + "englishFallback", "es", "Missing {amount}", type)));
+        when(translationMapper.findBundle(type, "es-mx", prefix)).thenReturn(List.of(
+                brokenExact,
+                translation(prefix + "englishFallback", "es-mx", "Unknown {wrong}", type),
+                translation(prefix + "reordered", "es-mx", "Local {currency} / {amount} / {currency}", type),
+                translation(prefix + "plain", "es-mx", "Correcto", type),
+                translation(prefix + "unknown", "es-mx", "Unknown {extra}", type),
+                translation(prefix + "noEnglish", "es-mx", "Manual {local}", type),
+                translation(prefix + "blankEnglish", "es-mx", "Manual {local}", type),
+                translation(prefix + "numeric", "es-mx", "Valor {0} {0}", type)));
+
+        var bundle = type == 5 ? service.getAdminI18nBundle("es-MX").messages() : service.getUserI18nMessages("es-MX");
+        assertEquals("Base {amount}", bundle.get(prefix + "baseFallback"));
+        assertEquals("Order {orderNo} / {amount}", bundle.get(prefix + "englishFallback"));
+        assertEquals("Local {currency} / {amount} / {currency}", bundle.get(prefix + "reordered"));
+        assertEquals("Correcto", bundle.get(prefix + "plain"));
+        assertEquals("Success", bundle.get(prefix + "unknown"));
+        assertEquals("Manual {local}", bundle.get(prefix + "noEnglish"));
+        assertEquals("Manual {local}", bundle.get(prefix + "blankEnglish"));
+        assertEquals("Valor {0} {0}", bundle.get(prefix + "numeric"));
+        assertEquals("Manual no amount", brokenExact.getTvalue());
+        verify(translationMapper).findBundle(type, "en", prefix);
+        verify(translationMapper).findBundle(type, "es", prefix);
+        verify(translationMapper).findBundle(type, "es-mx", prefix);
+        verify(translationMapper, never()).insert(any(Translation.class));
+        verify(translationMapper, never()).updateById(any(Translation.class));
+    }
+
     @Test
     void adminBundleUsesTypeFiveAndFiltersOutNonAdminKeys() {
         when(localeResolver.resolve("es-MX")).thenReturn("es");
@@ -159,11 +246,50 @@ class TranslationServiceImplTest {
         verify(translationMapper).findBundle(5,"es","admin.");
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {1, 5, 7})
+    void parameterContractRejectsDamagedBracesAndKeepsLiteralInterpolation(int type) {
+        String key = (type == 1 ? "server." : type == 5 ? "admin." : "user.") + "parameters";
+        when(localeResolver.resolve("es")).thenReturn("es");
+        when(localeResolver.lookupCandidates("es")).thenReturn(List.of("es", "en"));
+        if (type == 1) when(localeResolver.normalize(any())).thenAnswer(call -> call.getArgument(0));
+        if (type == 5) when(localeResolver.enabledLanguages()).thenReturn(List.of(new I18nLanguageOption("English", "en")));
+        Translation english = translation(key, "en", "Amount {amount}", type);
+        Translation localized = translation(key, "es", "", type);
+        if (type == 1) {
+            when(translationMapper.findLanguageCandidates(key, 1, List.of("es", "en")))
+                    .thenAnswer(call -> List.of(localized, english));
+        } else {
+            when(translationMapper.findBundle(type, "en", type == 5 ? "admin." : "user."))
+                    .thenAnswer(call -> List.of(english));
+            when(translationMapper.findBundle(type, "es", type == 5 ? "admin." : "user."))
+                    .thenAnswer(call -> List.of(localized));
+        }
+        java.util.function.Supplier<String> read = () -> type == 1 ? service.getTranslate(key, "es")
+                : type == 5 ? service.getAdminI18nBundle("es").messages().get(key) : service.getUserI18nMessages("es").get(key);
+        for (String damaged : List.of("Local {amount", "Local {amount}}", "Local {{amount}",
+                "Local {{{amount}}}", "Local {amount} plus {amount", "Local {amount} plus {wrong}")) {
+            localized.setTvalue(damaged);
+            assertEquals("Amount {amount}", read.get(), damaged);
+            assertEquals(damaged, localized.getTvalue());
+        }
+        localized.setTvalue("Local {amount} / {amount} / {'@'} / {'{'}");
+        assertEquals(localized.getTvalue(), read.get());
+
+        english.setTvalue("Success");
+        localized.setTvalue("Unexpected {unknown");
+        assertEquals("Success", read.get());
+        localized.setTvalue("Address {'@'} separator");
+        assertEquals(localized.getTvalue(), read.get());
+        verify(translationMapper, never()).insert(any(Translation.class));
+        verify(translationMapper, never()).updateById(any(Translation.class));
+    }
+
     @Test void bodyCacheHitsAllThreeTypesAndPreservesTheirDifferentBlankFallbackRules() {
         var source = new org.h2.jdbcx.JdbcDataSource();
         source.setURL("jdbc:h2:mem:service-translation-cache-" + java.util.UUID.randomUUID() + ";DB_CLOSE_DELAY=-1");
         var jdbc = new org.springframework.jdbc.core.JdbcTemplate(source);
-        jdbc.execute("CREATE TABLE system_setting(setting_key VARCHAR(100) PRIMARY KEY,setting_value VARCHAR(200),updated_at TIMESTAMP)");
+        jdbc.execute("CREATE TABLE system_setting(setting_key VARCHAR(100) PRIMARY KEY,setting_value VARCHAR(200),revision BIGINT NOT NULL DEFAULT 0,updated_at TIMESTAMP)");
         jdbc.update("INSERT INTO system_setting(setting_key,setting_value) VALUES(?,?)",org.token.tools.cache.TranslationBodyCache.REVISION_KEY,java.util.UUID.randomUUID().toString());
         var policies = org.mockito.Mockito.mock(org.token.tools.cache.CacheRuntimePolicyService.class);
         when(policies.current()).thenReturn(new org.token.tools.cache.CachePolicySnapshot(true,org.token.tools.cache.CacheMode.MEMORY,java.util.Map.of()));
@@ -181,6 +307,10 @@ class TranslationServiceImplTest {
             if("en".equals(lang))return List.of(translation(prefix+"word","en","Preserved",type),translation(prefix+"word","en","",type));
             return List.of();
         });
+        // 部署后旧身份缓存不能绕过新版参数校验。
+        cache.message("server.success\nes-mx,es,en", () -> "旧版服务端缓存");
+        cache.messages(5, "es-mx,es,en", () -> java.util.Map.of("admin.word", "旧版管理端缓存"));
+        cache.messages(7, "es-mx,es,en", () -> java.util.Map.of("user.word", "旧版用户端缓存"));
         for(int i=0;i<2;i++) {
             assertEquals("Correcto",service.getTranslate("server.success","es-MX"));
             assertEquals("Preserved",service.getAdminI18nBundle("es-MX").messages().get("admin.word"));

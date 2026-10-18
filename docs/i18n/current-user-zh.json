@@ -842,5 +842,12 @@
   "user.wheelUpdate.copied": "兑奖码已复制",
   "user.wheelUpdate.copyFailed": "复制失败，请长按兑奖码手动复制",
   "user.wheelUpdate.description": "活动说明",
-  "user.wheelUpdate.support": "联系客服"
+  "user.wheelUpdate.support": "联系客服",
+  "user.vora.nav.invite": "邀请",
+  "user.profileOverview.securityScore": "安全分",
+  "user.profileOverview.assetDistribution": "资产分布",
+  "user.profileOverview.availableAssets": "钱包可用资产",
+  "user.profileOverview.invitationIncome": "邀请收益",
+  "user.profileOverview.totalInvites": "累计邀请人数",
+  "user.profileOverview.quickLedger": "流水"
 }

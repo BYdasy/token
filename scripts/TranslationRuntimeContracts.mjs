@@ -43,6 +43,8 @@ export function runtimeTranslationContracts(sources, baselineKeys = []) {
     constant(admin + 'constants/ledger.ts', name, prefix);
   for (const [name, prefix] of [['ledgerKinds', 'user.v25.ledger.'], ['ledgerDetailTypes', 'user.v35Ledger.type.']])
     constant(user + 'utils/ledger.ts', name, prefix);
+  // 资产分布返回的 type 来自这里的闭合数组，组件跨纯函数读取后再拼接钱包名称。
+  constant(user + 'utils/profile-overview.ts', 'walletTypes', 'user.v13.wallet.');
   const schema = admin + 'views/merchant/schema.ts';
   constant(schema, 'states', 'admin.compute.merchant.state.');
   for (const name of ['columns', 'filters', 'details']) constant(schema, name, 'admin.compute.merchant.field.');

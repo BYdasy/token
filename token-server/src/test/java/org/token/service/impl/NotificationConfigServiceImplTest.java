@@ -176,7 +176,9 @@ class NotificationConfigServiceImplTest {
                 Arguments.of("标题", "正文", "标题\n正文"),
                 Arguments.of("标题 <确认> & 进度", "<strong>正文</strong>",
                         "标题 &lt;确认&gt; &amp; 进度\n<strong>正文</strong>"),
-                Arguments.of("标题", "<p>第一段</p><p>第二段</p>", "标题\n第一段\n第二段"));
+                Arguments.of("标题", "<p>第一段</p><p>第二段</p>", "标题\n第一段\n第二段"),
+                Arguments.of("提款待审核提醒", "用户: <code>alice</code>  \r\n提款订单: <code>WD1</code> \r\n已等待审核超过 <b>30</b> 分钟。",
+                        "提款待审核提醒\n用户: <code>alice</code>\n提款订单: <code>WD1</code>\n已等待审核超过 <b>30</b> 分钟。"));
     }
 
     @Test

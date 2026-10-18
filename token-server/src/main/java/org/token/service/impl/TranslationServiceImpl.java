@@ -16,9 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * 翻译服务实现
@@ -33,6 +35,13 @@ public class TranslationServiceImpl
     private static final int ADMIN_LANGUAGE_TEMPLATE_TYPE = 5;
 
     private static final Set<Integer> READ_ONLY_PACKAGE_TYPES = Set.of(5, 7);
+
+    // 更新读取身份，避免发布后命中旧版本未校验参数的共享缓存。
+    private static final String MESSAGE_FORMAT_VERSION = "parameters-v1:";
+    private static final Pattern MESSAGE_PARAMETERS = Pattern.compile(
+            "(?<!\\{)(?:\\{\\{[\\p{L}\\p{N}_$]+}}|\\{[\\p{L}\\p{N}_$]+})(?!})");
+    // Vue I18n 的 {'@'}、{'{'} 等字面插值不属于参数，也不能被括号检查误拒。
+    private static final Pattern MESSAGE_LITERALS = Pattern.compile("\\{'[^'\\r\\n]*'}");
 
     private final EnabledLocaleResolver localeResolver;
     private final ComputeSystemMessageService systemMessages;
@@ -125,7 +134,7 @@ public class TranslationServiceImpl
         List<String> candidates=localeResolver.lookupCandidates(targetLanguage).stream().map(localeResolver::normalize).distinct().toList();
         if(candidates.isEmpty())return key;
         return bodyCache == null ? loadServerMessage(key, candidates)
-                : bodyCache.message(key + "\n" + String.join(",", candidates), () -> loadServerMessage(key, candidates));
+                : bodyCache.message(MESSAGE_FORMAT_VERSION + key + "\n" + String.join(",", candidates), () -> loadServerMessage(key, candidates));
     }
 
     private String loadServerMessage(String key, List<String> candidates) {
@@ -133,9 +142,13 @@ public class TranslationServiceImpl
         List<Translation> translations=repository.findLanguageCandidates(key,SYSTEM_MESSAGE_TEMPLATE_TYPE,candidates);
         Map<String,Translation> latest=new LinkedHashMap<>();
         for(Translation translation:translations)latest.putIfAbsent(localeResolver.normalize(translation.getLang()),translation);
+        Translation english = latest.get("en");
+        Set<String> expected = english == null || !StringUtils.hasText(english.getTvalue())
+                ? null : messageParameters(english.getTvalue());
         for (String candidate : candidates) {
             Translation translation = latest.get(candidate);
-            if (translation != null && StringUtils.hasText(translation.getTvalue())) {
+            if (translation != null && StringUtils.hasText(translation.getTvalue())
+                    && hasExpectedParameters(translation.getTvalue(), expected)) {
                 return translation.getTvalue();
             }
         }
@@ -150,7 +163,7 @@ public class TranslationServiceImpl
         String targetLanguage = localeResolver.resolve(lang);
         List<String> candidates = localeResolver.lookupCandidates(targetLanguage);
         Map<String, String> messages = bodyCache == null ? loadBundle(5, "admin.", candidates)
-                : bodyCache.messages(5, String.join(",", candidates), () -> loadBundle(5, "admin.", candidates));
+                : bodyCache.messages(5, MESSAGE_FORMAT_VERSION + String.join(",", candidates), () -> loadBundle(5, "admin.", candidates));
         return new AdminI18nBundle(targetLanguage, localeResolver.enabledLanguages(), Map.copyOf(messages));
     }
 
@@ -159,7 +172,7 @@ public class TranslationServiceImpl
         String language = localeResolver.resolve(lang);
         List<String> candidates = localeResolver.lookupCandidates(language);
         return bodyCache == null ? loadBundle(7, "user.", candidates)
-                : bodyCache.messages(7, String.join(",", candidates), () -> loadBundle(7, "user.", candidates));
+                : bodyCache.messages(7, MESSAGE_FORMAT_VERSION + String.join(",", candidates), () -> loadBundle(7, "user.", candidates));
     }
 
     @Override
@@ -169,19 +182,41 @@ public class TranslationServiceImpl
 
     private Map<String, String> loadBundle(int type, String prefix, List<String> candidates) {
         Map<String, String> messages = new LinkedHashMap<>();
+        Map<String, Set<String>> englishParameters = new LinkedHashMap<>();
 
         for (int index = candidates.size() - 1; index >= 0; index--) {
-            List<Translation> records = repository.findBundle(type,candidates.get(index),prefix);
+            String candidate = candidates.get(index);
+            List<Translation> records = repository.findBundle(type,candidate,prefix);
             for (Translation record : records) {
                 if (StringUtils.hasText(record.getTkey())
                         && (type == 7 || record.getTkey().startsWith(prefix))
                         && StringUtils.hasText(record.getTvalue())) {
-                    messages.put(record.getTkey(), record.getTvalue());
+                    if ("en".equals(candidate)) {
+                        englishParameters.put(record.getTkey(), messageParameters(record.getTvalue()));
+                        messages.put(record.getTkey(), record.getTvalue());
+                    } else if (hasExpectedParameters(record.getTvalue(), englishParameters.get(record.getTkey()))) {
+                        messages.put(record.getTkey(), record.getTvalue());
+                    }
                 }
             }
         }
 
         return messages;
+    }
+
+    /** 只比较参数及括号协议；允许重排和重复，不回写保存的人工译文。 */
+    private static boolean hasExpectedParameters(String value, Set<String> expected) {
+        return expected == null || expected.equals(messageParameters(value));
+    }
+
+    private static Set<String> messageParameters(String value) {
+        Set<String> parameters = new HashSet<>();
+        var matcher = MESSAGE_PARAMETERS.matcher(MESSAGE_LITERALS.matcher(value).replaceAll(""));
+        while (matcher.find()) parameters.add(matcher.group());
+        String remaining = matcher.replaceAll("");
+        // 已有合法参数旁再混入损坏的括号也必须回退；英语本身无有效协议时沿用原读取行为。
+        if (remaining.indexOf('{') >= 0 || remaining.indexOf('}') >= 0) return null;
+        return parameters;
     }
 
     /**

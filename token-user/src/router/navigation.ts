@@ -1,9 +1,9 @@
-// 两端共用五个入口；邀请、记录和安全等功能从首页与个人中心进入。
+// 两端共用五个入口；钱包、记录和安全等功能从首页与个人中心进入。
 export const primaryNavigation = [
   { to: "/", icon: "wap-home-o", key: "home" },
   { to: "/token", icon: "income-levels", key: "token" },
   { to: "/projects", icon: "cluster-o", key: "projects" },
-  { to: "/wallet", icon: "balance-o", key: "wallet" },
+  { to: "/team", icon: "friends-o", key: "invite" },
   { to: "/profile", icon: "user-o", key: "profile" },
 ];
 export const mobileNavigation = primaryNavigation;
@@ -13,8 +13,8 @@ export function navigationActive(target: string, path: string) {
   if (target === "/token") return path === "/auto-records" || path === "/levels" || path.startsWith("/levels/");
   if (target === "/projects")
     return path.startsWith("/products/");
-  if (target === "/wallet") return ["/deposit", "/withdraw", "/transfer", "/addresses", "/records"].includes(path);
-  if (target === "/profile") return ["/team", "/team/overview", "/security", "/settings"].includes(path);
+  if (target === "/team") return path.startsWith("/team/");
+  if (target === "/profile") return ["/wallet", "/deposit", "/withdraw", "/transfer", "/addresses", "/records", "/security", "/settings"].includes(path);
   return false;
 }
 

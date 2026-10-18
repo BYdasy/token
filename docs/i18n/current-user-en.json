@@ -842,5 +842,12 @@
   "user.wheelUpdate.copied": "Redemption code copied",
   "user.wheelUpdate.copyFailed": "Copy failed. Please select and copy the code manually.",
   "user.wheelUpdate.description": "Activity information",
-  "user.wheelUpdate.support": "Contact support"
+  "user.wheelUpdate.support": "Contact support",
+  "user.vora.nav.invite": "Invite",
+  "user.profileOverview.securityScore": "Security score",
+  "user.profileOverview.assetDistribution": "Asset allocation",
+  "user.profileOverview.availableAssets": "Available wallet assets",
+  "user.profileOverview.invitationIncome": "Invitation earnings",
+  "user.profileOverview.totalInvites": "Total invited members",
+  "user.profileOverview.quickLedger": "Transactions"
 }

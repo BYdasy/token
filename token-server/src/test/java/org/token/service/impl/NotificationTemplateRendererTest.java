@@ -46,5 +46,15 @@ class NotificationTemplateRendererTest {
         selected.setEnabled(0);
         assertNull(new NotificationTemplateRenderer(templates,translations).preview(selected,"en",Map.of()));
     }
+    @Test void telegramVariablesCannotInjectHtmlOrExpandAgainWhileTemplateLineBreaksRemain(){
+        var templates=mock(NotificationTemplateRepository.class);var translations=mock(TranslationRepository.class);
+        var selected=new NotificationTemplate();selected.setId(12L);selected.setCode("WD_LATE_TG");selected.setChannelType("TELEGRAM");selected.setEnabled(1);
+        selected.setTitleTemplate("提款待审核提醒");
+        selected.setContentTemplate("用户: <code>{{username}}</code>\n提款订单: <code>{{orderNo}}</code>\n已等待审核超过 <b>{{minutes}}</b> 分钟。");
+        var preview=new NotificationTemplateRenderer(templates,translations).preview(selected,"zh",Map.of(
+                "username","</code><script>bad</script>{{minutes}}","orderNo","TEST-001","minutes","30"));
+        assertEquals("用户: <code>&lt;/code&gt;&lt;script&gt;bad&lt;/script&gt;{{minutes}}</code>\n提款订单: <code>TEST-001</code>\n已等待审核超过 <b>30</b> 分钟。",
+                TelegramHtmlSanitizer.sanitize(preview.rendered().content()));
+    }
     private static Translation translation(String lang,String value){var row=new Translation();row.setLang(lang);row.setTvalue(value);return row;}
 }

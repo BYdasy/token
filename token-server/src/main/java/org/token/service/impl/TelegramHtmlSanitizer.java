@@ -45,7 +45,8 @@ final class TelegramHtmlSanitizer {
         if (!StringUtils.hasText(source)) {
             return "";
         }
-        String markdownConverted = convertMarkdownCode(source);
+        // HTML 解析会折叠文本中的 LF；仅替换标签外换行，不能改动带换行的属性或注释。
+        String markdownConverted = preserveTextLineBreaks(convertMarkdownCode(source));
         StringBuilder output = new StringBuilder(markdownConverted.length());
         Deque<String> openedTags = new ArrayDeque<>();
         try {
@@ -95,7 +96,9 @@ final class TelegramHtmlSanitizer {
                         @Override
                         public void handleSimpleTag(HTML.Tag tag, MutableAttributeSet attributes, int pos) {
                             String name = tag.toString().toLowerCase(Locale.ROOT);
-                            if ("br".equals(name) || "hr".equals(name)) {
+                            if ("br".equals(name)) {
+                                output.append('\n');
+                            } else if ("hr".equals(name)) {
                                 appendLineBreak(output);
                             }
                         }
@@ -158,6 +161,48 @@ final class TelegramHtmlSanitizer {
         return result.toString();
     }
 
+    /** 只保护显示文本的换行；最终标签和属性仍由原有 HTML 白名单解析器裁剪。 */
+    private static String preserveTextLineBreaks(String source) {
+        String normalized = source.replace("\r\n", "\n").replace('\r', '\n');
+        StringBuilder result = new StringBuilder(normalized.length());
+        for (int index = 0; index < normalized.length();) {
+            char current = normalized.charAt(index);
+            if (current == '<') {
+                int end = markupEnd(normalized, index);
+                if (end > index) {
+                    result.append(normalized, index, end);
+                    index = end;
+                    continue;
+                }
+            }
+            if (current == '\n') result.append("<br>");
+            else result.append(current);
+            index++;
+        }
+        return result.toString();
+    }
+
+    private static int markupEnd(String source, int start) {
+        if (source.startsWith("<!--", start)) {
+            int end = source.indexOf("-->", start + 4);
+            return end < 0 ? source.length() : end + 3;
+        }
+        int name = start + 1;
+        if (name < source.length() && source.charAt(name) == '/') name++;
+        if (name >= source.length()) return -1;
+        char first = source.charAt(name);
+        if (!(first >= 'A' && first <= 'Z' || first >= 'a' && first <= 'z' || first == '!' || first == '?')) return -1;
+        char quote = 0;
+        for (int index = name + 1; index < source.length(); index++) {
+            char current = source.charAt(index);
+            if (quote != 0) {
+                if (current == quote) quote = 0;
+            } else if (current == '\'' || current == '"') quote = current;
+            else if (current == '>') return index + 1;
+        }
+        return source.length();
+    }
+
     private static void appendLineBreak(StringBuilder output) {
         int length = output.length();
         if (length > 0 && output.charAt(length - 1) != '\n') {
@@ -166,8 +211,8 @@ final class TelegramHtmlSanitizer {
     }
 
     private static String trimBlankLines(String value) {
-        return value.replaceAll("[ \\t]+\\n", "\\n")
-                .replaceAll("\\n{3,}", "\\n\\n")
+        return value.replaceAll("[ \\t]+\\n", "\n")
+                .replaceAll("\\n{3,}", "\n\n")
                 .strip();
     }
 }

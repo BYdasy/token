@@ -1,0 +1,63 @@
+{
+  "source": "对照 ref/credits-main 的151号电报默认模板分行修复，仅作为固定旧值与新值的可读清单。",
+  "channelType": "TELEGRAM",
+  "translationType": 6,
+  "templates": [
+    {
+      "code": "L_DEP_TG",
+      "name": "大额充值（Telegram）",
+      "zh": {
+        "title": "大额充值到账",
+        "oldContent": "用户 {{username}} 的充值订单 {{orderNo}} 已到账 {{amount}} {{currency}}。",
+        "content": "用户: <code>{{username}}</code>\n充值订单: <code>{{orderNo}}</code>\n到账金额: <b>{{amount}} {{currency}}</b>"
+      },
+      "en": {
+        "title": "Large deposit credited",
+        "oldContent": "Deposit {{orderNo}} for {{username}} was credited with {{amount}} {{currency}}.",
+        "content": "User: <code>{{username}}</code>\nDeposit order: <code>{{orderNo}}</code>\nAmount credited: <b>{{amount}} {{currency}}</b>"
+      }
+    },
+    {
+      "code": "L_WD_TG",
+      "name": "大额提款（Telegram）",
+      "zh": {
+        "title": "大额提款申请",
+        "oldContent": "用户 {{username}} 提交提款订单 {{orderNo}}，申请总额 {{amount}} {{currency}}。",
+        "content": "用户: <code>{{username}}</code>\n提款订单: <code>{{orderNo}}</code>\n申请总额: <b>{{amount}} {{currency}}</b>"
+      },
+      "en": {
+        "title": "Large withdrawal requested",
+        "oldContent": "{{username}} submitted withdrawal {{orderNo}} for a total of {{amount}} {{currency}}.",
+        "content": "User: <code>{{username}}</code>\nWithdrawal order: <code>{{orderNo}}</code>\nRequested total: <b>{{amount}} {{currency}}</b>"
+      }
+    },
+    {
+      "code": "WD_LATE_TG",
+      "name": "提款长时间未审核（Telegram）",
+      "zh": {
+        "title": "提款待审核提醒",
+        "oldContent": "用户 {{username}} 的提款订单 {{orderNo}} 已等待审核超过 {{minutes}} 分钟。",
+        "content": "用户: <code>{{username}}</code>\n提款订单: <code>{{orderNo}}</code>\n已等待审核超过 <b>{{minutes}}</b> 分钟。"
+      },
+      "en": {
+        "title": "Withdrawal awaiting review",
+        "oldContent": "Withdrawal {{orderNo}} for {{username}} has awaited review for more than {{minutes}} minutes.",
+        "content": "User: <code>{{username}}</code>\nWithdrawal order: <code>{{orderNo}}</code>\nAwaiting review for more than <b>{{minutes}}</b> minutes."
+      }
+    },
+    {
+      "code": "ENERGY_TG",
+      "name": "能量供应商余额不足（Telegram）",
+      "zh": {
+        "title": "能量供应商余额偏低",
+        "oldContent": "{{providerName}} 当前余额 {{balance}} {{currency}}，低于提醒阈值 {{threshold}} {{currency}}。",
+        "content": "供应商: <code>{{providerName}}</code>\n当前余额: <b>{{balance}} {{currency}}</b>\n提醒阈值: <b>{{threshold}} {{currency}}</b>\n余额已低于提醒阈值，请及时补充。"
+      },
+      "en": {
+        "title": "Low energy provider balance",
+        "oldContent": "{{providerName}} has a balance of {{balance}} {{currency}}, below the alert threshold of {{threshold}} {{currency}}.",
+        "content": "Provider: <code>{{providerName}}</code>\nCurrent balance: <b>{{balance}} {{currency}}</b>\nAlert threshold: <b>{{threshold}} {{currency}}</b>\nThe balance is below the alert threshold. Please top up."
+      }
+    }
+  ]
+}

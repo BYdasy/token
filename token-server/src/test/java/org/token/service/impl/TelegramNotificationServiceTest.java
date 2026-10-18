@@ -74,7 +74,7 @@ class TelegramNotificationServiceTest {
         verify(config).sendTelegramExternal(1L, "Title", "Textlink", "-10012345678901234567", "en");
         assertThrows(BusinessException.class, () -> service.sendBound(1L, "ALL", List.of(), null, "<img src='x'>", "en"));
         service.sendBound(1L, "SELECTED", List.of(7L), null, "<p>First</p><p>Second</p>", "en");
-        verify(config).sendTelegramExternal(1L, null, "First<br>Second", "-10012345678901234567", "en");
+        verify(config).sendTelegramExternal(1L, null, "First\nSecond", "-10012345678901234567", "en");
     }
 
     @Test void templateBranchRequiresEnabledTelegramTemplateAndUsesRenderedContent() {
@@ -155,7 +155,7 @@ class TelegramNotificationServiceTest {
                 new NotificationTemplateRenderer.Rendered("Preview", "<p>First</p><p>Second<script>bad()</script></p>", "TELEGRAM"), List.of("name")));
         var preview = service.previewTemplate(request, "zh");
         assertEquals("[TEST] Preview", preview.title());
-        assertEquals("First<br>Second", preview.content());
+        assertEquals("First\nSecond", preview.content());
         assertEquals(List.of("name"), preview.variables());
         verify(templates).getById(12L);
         verify(renderer).preview(selected, "en", request.variables());
@@ -172,6 +172,18 @@ class TelegramNotificationServiceTest {
         verify(config).sendTelegramExternal(1L, "[TEST] Title", "<b>Sample</b>", "-10012345678901234567", "en");
         verifyNoInteractions(scope);
         verifyNoMoreInteractions(config);
+    }
+
+    @Test void templateTestDefaultsToChineseAndKeepsTheSameLineBreaksFromPreviewToSend() {
+        var selected = testTemplate();
+        var template = new TelegramTemplatePreviewRequest(12L, Map.of("username", "Sample", "orderNo", "TEST-001", "minutes", "30"), null);
+        String body = "用户: <code>Sample</code>  \r\n提款订单: <code>TEST-001</code> \r\n已等待审核超过 <b>30</b> 分钟。";
+        when(renderer.preview(selected, "zh", template.variables())).thenReturn(new NotificationTemplateRenderer.Preview(
+                new NotificationTemplateRenderer.Rendered("提款待审核提醒", body, "TELEGRAM"), List.of("username", "orderNo", "minutes")));
+        var preview = service.previewTemplate(template, "en");
+        assertEquals("用户: <code>Sample</code>\n提款订单: <code>TEST-001</code>\n已等待审核超过 <b>30</b> 分钟。", preview.content());
+        assertEquals(1, service.testTemplate(new TelegramTemplateTestRequest(template, 1L, 7L), "en"));
+        verify(config).sendTelegramExternal(1L, preview.title(), preview.content(), "-10012345678901234567", "zh");
     }
 
     @Test void singleTemplateTestRejectsMissingVariablesAndInvalidRecipientBeforeSending() {

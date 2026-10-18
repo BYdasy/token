@@ -24,10 +24,10 @@ import TelegramTemplateTestDialog from './TelegramTemplateTestDialog.vue';
 const cleanup: (() => void)[] = [];
 const flush = async () => { for (let i = 0; i < 10; i++) { await Promise.resolve(); await nextTick(); } };
 const n = (key: string) => `admin.notification.templateTest.${key}`;
-function mount() {
+function mount(languages = ['en', 'zh']) {
   const host = document.createElement('div'); document.body.append(host);
   const closed = vi.fn();
-  const app = createApp({ render: () => h(TelegramTemplateTestDialog, { modelValue: true, template: { id: 12, code: 'SAVED', name: 'Saved', channelType: 'TELEGRAM', enabled: 1, contentTemplate: '', enabledLanguages: [{ lang: 'en' }, { lang: 'zh' }] }, 'onUpdate:modelValue': closed }) });
+  const app = createApp({ render: () => h(TelegramTemplateTestDialog, { modelValue: true, template: { id: 12, code: 'SAVED', name: 'Saved', channelType: 'TELEGRAM', enabled: 1, contentTemplate: '', enabledLanguages: languages.map(lang => ({ lang })) }, 'onUpdate:modelValue': closed }) });
   app.directive('loading', {}); app.mount(host);
   cleanup.push(() => { app.unmount(); host.remove(); });
   return { host, closed };
@@ -61,7 +61,7 @@ describe('单个 Telegram 模板测试', () => {
     const labels = host.querySelector(`[data-label="${n('recipient')}"]`)!.textContent;
     expect(labels).toContain('Enabled'); expect(labels).not.toContain('Disabled'); expect(labels).not.toContain('Other');
     button(host, n('sendOne')).click(); await flush();
-    expect(api.test).toHaveBeenCalledExactlyOnceWith({ channelId: 1, bindingId: 71, template: { templateId: 12, language: 'en', variables: { username: 'test_user' } } });
+    expect(api.test).toHaveBeenCalledExactlyOnceWith({ channelId: 1, bindingId: 71, template: { templateId: 12, language: 'zh', variables: { username: 'test_user' } } });
     expect(closed).toHaveBeenCalledWith(false);
   });
   it('修改变量使旧预览失效，更新预览之后才能发送且切换渠道清空接收人', async () => {
@@ -71,7 +71,7 @@ describe('单个 Telegram 模板测试', () => {
     expect(button(host, n('sendOne')).disabled).toBe(true); expect(host.textContent).toContain(n('previewStale'));
     button(host, n('refreshPreview')).click(); await flush();
     expect(button(host, n('sendOne')).disabled).toBe(false);
-    expect(api.preview).toHaveBeenLastCalledWith({ templateId: 12, language: 'en', variables: { username: 'different_sample' } });
+    expect(api.preview).toHaveBeenLastCalledWith({ templateId: 12, language: 'zh', variables: { username: 'different_sample' } });
     await select(host, 'admin.compute.v51Notifications.channel', '2');
     expect(button(host, n('sendOne')).disabled).toBe(true); expect(api.test).not.toHaveBeenCalled();
   });
@@ -93,5 +93,29 @@ describe('单个 Telegram 模板测试', () => {
     api.preview.mockRejectedValue(new Error('preview unavailable'));
     button(host, 'admin.compute.v12sound.retry').click(); await flush(); await targets(host);
     expect(host.textContent).toContain(n('previewFailed')); expect(button(host, n('sendOne')).disabled).toBe(true);
+  });
+  it.each([
+    [['en', 'zh-CN', 'zh'], 'zh'],
+    [['en', 'zh-CN'], 'zh-CN'],
+    [['en', 'zh_TW'], 'zh_TW'],
+    [['fr', 'en'], 'en'],
+    [['fr', 'ar'], 'fr'],
+    [[], 'zh'],
+  ] as [string[], string][])('默认优先可用中文，缺少中文时仅回退已启用语言 %j', async (languages, expected) => {
+    const { host } = mount(languages); await flush();
+    expect(host.querySelector<HTMLSelectElement>(`[data-label="${n('language')}"] select`)?.value).toBe(expected);
+    expect(api.preview).toHaveBeenLastCalledWith({ templateId: 12, language: expected, variables: { username: 'test_user' } });
+    expect(api.test).not.toHaveBeenCalled();
+  });
+  it('预览保留服务端换行与行内强调，并继续清理危险 HTML', async () => {
+    const content = '用户: <code>test_user</code>\n提款订单: <code>TEST-ORDER</code>\n已等待审核超过 <strong>30</strong> 分钟。<script>unsafe()</script>';
+    api.preview.mockResolvedValue({ title: '[TEST] 提款待审核', content, variables: [] });
+    const { host } = mount(); await flush();
+    const preview = host.querySelector('.template-test-preview-content')!;
+    expect(preview.textContent).toBe('用户: test_user\n提款订单: TEST-ORDER\n已等待审核超过 30 分钟。');
+    expect(preview.querySelectorAll('code')).toHaveLength(2);
+    expect(preview.querySelector('strong')?.textContent).toBe('30');
+    expect(preview.querySelector('script')).toBeNull();
+    expect(api.test).not.toHaveBeenCalled();
   });
 });

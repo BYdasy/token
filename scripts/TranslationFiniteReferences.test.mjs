@@ -142,3 +142,45 @@ test('跨模块协议目录和 Java switch 产生尚无基线的键', () => {
   for (const key of ['admin.compute.v25.ledger.NEW_KIND', 'server.new.first', 'server.new.other', 'user.currency.addressField.newField', 'admin.compute.currency.addressField.newField'])
     assert.ok(result.references.some(row => row.key === key));
 });
+
+test('资产分布的跨函数钱包代码直接从闭合声明生成键，不靠现有字典推断', () => {
+  const result = runtimeTranslationContracts([
+    { file: 'token-user/src/utils/profile-overview.ts', text: 'const walletTypes=["COMPUTE","PROJECT","EARNINGS","FUTURE_WALLET"] as const;' },
+  ]);
+  assert.deepEqual(result.references.map(row => row.key).sort(), [
+    'user.v13.wallet.COMPUTE', 'user.v13.wallet.EARNINGS', 'user.v13.wallet.FUTURE_WALLET', 'user.v13.wallet.PROJECT',
+  ]);
+  assert.equal(result.patterns.length, 0);
+});
+
+test('条件展开的 labelKey 同时保留默认字段分支，不依赖已有字典', () => {
+  const found = keys('<script setup>const fields=computed(()=>[{key:"minAmount",...(resource.value === "ledger" ? {labelKey:"v35Ledger.minBusinessAmount"}: {})},{key:"maxAmount",...(resource.value === "ledger" && {labelKey:"v35Ledger.maxBusinessAmount"})}]);</script><template><BusinessSearchFields :fields="fields" /></template>');
+  for (const key of ['v35Ledger.minBusinessAmount', 'v35Ledger.maxBusinessAmount', 'field.minAmount', 'field.maxAmount']) assert.ok(found.has('admin.compute.' + key));
+});
+
+test('条件展开遵循覆盖顺序，确定分支不产生已覆盖或不可达的假键', () => {
+  const found = keys('<script setup>import type {ComputeField} from "./shared";const mode="ledger";const fields:ComputeField[]=[{key:"amount",labelKey:"old",...(mode==="ledger"?{labelKey:"new"}:{labelKey:"unreachable"})},{key:"other",...(runtime ? {labelKey:"ignored"}:{}),labelKey:"final"}];</script>');
+  for (const key of ['new', 'final']) assert.ok(found.has('admin.compute.' + key));
+  for (const key of ['old', 'unreachable', 'ignored', 'field.amount', 'field.other']) assert.ok(!found.has('admin.compute.' + key));
+});
+
+test('条件展开保留未知属性，后续确定覆盖清除待核对标记', () => {
+  const result = scan('<script setup>import type {ComputeField} from "./shared";const fields:ComputeField[]=[{key:"optional",...(runtime ? {hint:remote.hint}:{})},{key:"resolved",hint:remote.hint,...{hint:"fresh"}}];</script>');
+  assert.ok(result.unresolved.some(row => row.expression === 'optional.hint'));
+  assert.ok(!result.unresolved.some(row => row.expression === 'resolved.hint'));
+  assert.ok(result.references.some(row => row.key === 'admin.compute.hint.fresh'));
+});
+
+test('内联映射优先于默认拼接，不产生被替代的假报表键', () => {
+  const found = keys('<script setup>const {c}=useCompute();const rows=["fee","amount"];const label=(key:string)=>c(({fee:"current.fee"} as Record<string,string>)[key] || "legacy."+key);</script><template><p v-for="key in rows">{{label(key)}}</p></template>');
+  assert.ok(found.has('admin.compute.current.fee'));
+  assert.ok(found.has('admin.compute.legacy.amount'));
+  assert.ok(!found.has('admin.compute.legacy.fee'));
+});
+
+test('包装器未知参数保留完整表达式，不把函数声明另报成调用', () => {
+  const result = scan('<script setup>const {c}=useCompute();function label(status:string){return c(`state.${status}`)}label(String(remote.status || "UNKNOWN"));</script>');
+  assert.ok(result.unresolved.some(row => row.expression.includes('String(remote.status || "UNKNOWN")')));
+  assert.ok(!result.unresolved.some(row => row.expression.includes('status:string')));
+  assert.ok(!result.unresolved.some(row => row.kind === '包装器动态参数'));
+});

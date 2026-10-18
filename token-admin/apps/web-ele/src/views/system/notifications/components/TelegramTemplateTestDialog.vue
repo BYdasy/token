@@ -16,7 +16,7 @@ const loadFailed = ref(false), previewFailed = ref(false), sendFailed = ref(fals
 const options = ref<TelegramSendOptions>({ channels: [], bindings: [], templates: [] });
 const preview = ref<TelegramTemplatePreview>();
 const previewSignature = ref('');
-const form = reactive({ channelId: undefined as number | undefined, bindingId: undefined as number | undefined, language: 'en', variables: {} as Record<string, string> });
+const form = reactive({ channelId: undefined as number | undefined, bindingId: undefined as number | undefined, language: 'zh', variables: {} as Record<string, string> });
 const variableNames = ref<string[]>([]);
 const languages = computed(() => {
   const rows = props.template?.enabledLanguages?.length ? props.template.enabledLanguages : [{ lang: 'zh' }, { lang: 'en' }];
@@ -30,8 +30,18 @@ const canSend = computed(() => !loading.value && !previewLoading.value && !loadF
   && variableNames.value.every(key => Boolean(form.variables[key]?.trim())));
 let loadGeneration = 0, previewGeneration = 0;
 
+function defaultLanguage() {
+  const rows = languages.value;
+  const normalized = (language: string) => language.toLowerCase().replaceAll('_', '-');
+  return rows.find(item => normalized(item.lang) === 'zh')?.lang
+    || rows.find(item => normalized(item.lang) === 'zh-cn')?.lang
+    || rows.find(item => normalized(item.lang).startsWith('zh-'))?.lang
+    || rows.find(item => normalized(item.lang) === 'en')?.lang
+    || rows[0]?.lang || 'zh';
+}
 function sampleValue(key: string) {
   if (/amount|balance|threshold|fee|token/i.test(key)) return '100.00';
+  if (key === 'minutes') return '30';
   if (/username|memberName/i.test(key)) return 'test_user';
   if (/currency/i.test(key)) return 'USDT';
   if (/uid|memberId/i.test(key)) return '10001';
@@ -107,7 +117,7 @@ watch(() => props.modelValue, (open) => {
   preview.value = undefined;
   variableNames.value = [];
   Object.assign(form, { channelId: undefined, bindingId: undefined,
-    language: languages.value.some(item => item.lang === 'en') ? 'en' : languages.value[0]?.lang || 'en', variables: {} });
+    language: defaultLanguage(), variables: {} });
   void load();
 }, { immediate: true });
 onBeforeUnmount(() => { ++loadGeneration; ++previewGeneration; });
@@ -140,8 +150,8 @@ onBeforeUnmount(() => { ++loadGeneration; ++previewGeneration; });
         <div class="template-test-preview-heading"><span>{{ n('preview') }}</span><ElButton :loading="previewLoading" @click="refreshPreview">{{ n('refreshPreview') }}</ElButton></div>
         <ElAlert v-if="previewFailed" :title="n('previewFailed')" type="error" :closable="false" show-icon class="template-test-notice" />
         <section v-if="preview" class="template-test-preview" :aria-label="n('preview')" aria-live="polite">
-          <strong>{{ preview.title }}</strong>
-          <div v-html="sanitizeNotificationHtml(preview.content)" />
+          <strong class="template-test-preview-title">{{ preview.title }}</strong>
+          <div class="template-test-preview-content" v-html="sanitizeNotificationHtml(preview.content)" />
         </section>
         <p v-if="preview && !previewCurrent && !previewLoading" class="template-test-help" role="status">{{ n('previewStale') }}</p>
         <ElAlert v-if="sendFailed" :title="n('sendFailed')" type="warning" :closable="false" show-icon class="template-test-notice" />
@@ -160,7 +170,8 @@ onBeforeUnmount(() => { ++loadGeneration; ++previewGeneration; });
 .template-test :deep(.el-select) { width: 100%; }
 .template-test-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0 12px; font-weight: 600; }
 .template-test-preview { max-height: 300px; overflow: auto; padding: 16px; border: 1px solid var(--el-border-color); border-radius: 12px; line-height: 1.65; overflow-wrap: anywhere; }
-.template-test-preview strong { display: block; margin-bottom: 8px; }
+.template-test-preview-title { display: block; margin-bottom: 8px; white-space: pre-wrap; }
+.template-test-preview-content { white-space: pre-wrap; }
 .template-test-notice { margin: 0 0 16px; }
 .template-test-retry { margin-top: 12px; }
 @media (max-width: 600px) { .template-test-targets, .template-test-variables { grid-template-columns: minmax(0, 1fr); } }

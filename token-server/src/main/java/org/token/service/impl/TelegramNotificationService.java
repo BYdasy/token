@@ -116,8 +116,8 @@ public class TelegramNotificationService {
         if (!StringUtils.hasText(content)) throw new BusinessException("server.notification.content.required");
         String sanitized = TelegramHtmlSanitizer.sanitize(content);
         if (!StringUtils.hasText(sanitized)) throw new BusinessException("server.notification.content.required");
-        // 下游发送器会再次规范化 HTML；把已规范化换行还原为 br，避免第二次解析折叠段落。
-        config.sendTelegramExternal(channelId, title, sanitized.replace("\n", "<br>"),
+        // 发送与预览共用同一规范化文本，多次清理仍保留真实换行。
+        config.sendTelegramExternal(channelId, title, sanitized,
                 targets.stream().map(NotificationTelegramBinding::getChatId).distinct().collect(Collectors.joining(",")), language);
         return targets.size();
     }
@@ -146,7 +146,7 @@ public class TelegramNotificationService {
         if (request.language() != null && (request.language().length() > 20
                 || !request.language().matches("[a-zA-Z]{2,3}(?:[-_][a-zA-Z0-9]{2,8})*")))
             throw new BusinessException("server.notification.template.testLanguageInvalid");
-        String language = request.language() == null ? fallbackLanguage : request.language();
+        String language = request.language() == null ? "zh" : request.language();
         var selectedTemplate = templates.getById(request.templateId());
         if (selectedTemplate == null || !Integer.valueOf(1).equals(selectedTemplate.getEnabled()))
             throw new BusinessException("server.notification.template.notFound");
@@ -158,7 +158,7 @@ public class TelegramNotificationService {
             throw new BusinessException("server.notification.channel.typeInvalid");
         String content = TelegramHtmlSanitizer.sanitize(preview.rendered().content());
         return new TelegramTemplatePreviewView("[TEST] " + Objects.toString(preview.rendered().title(), ""),
-                content.replace("\n", "<br>"), preview.variables());
+                content, preview.variables());
     }
 
     public int testTemplate(TelegramTemplateTestRequest request, String fallbackLanguage) {
@@ -169,7 +169,7 @@ public class TelegramNotificationService {
         if (preview.variables().stream().anyMatch(key -> !StringUtils.hasText(variables.get(key))))
             throw new BusinessException("server.notification.template.testVariablesRequired");
         return sendBound(request.channelId(), "SELECTED", List.of(request.bindingId()), preview.title(), preview.content(),
-                request.template().language() == null ? fallbackLanguage : request.template().language());
+                request.template().language() == null ? "zh" : request.template().language());
     }
 
     private NotificationChannelConfig requireChannel(Long id, boolean enabled) {

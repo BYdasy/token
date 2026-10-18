@@ -594,11 +594,11 @@ public class NotificationConfigServiceImpl implements NotificationConfigService 
         if (chatIds.isEmpty()) {
             throw new BusinessException("server.notification.recipient.required");
         }
-        // HTML 解析器会把普通换行折叠为空格，用 br 保留标题与正文的分隔。
+        // 标题按纯文本转义；正文共用 Telegram 安全格式并保留实际换行。
         String text = TelegramHtmlSanitizer.sanitize(
                 StringUtils.hasText(title)
                         ? org.springframework.web.util.HtmlUtils.htmlEscape(title.trim())
-                                + "<br>" + (content == null ? "" : content)
+                                + "\n" + (content == null ? "" : content)
                         : content);
         for (String chatId : chatIds) {
             requireTelegramSuccess(telegramBotClient.sendMessage(token, chatId, text));

@@ -222,6 +222,23 @@ export function finiteTranslationReferences(sources) {
       if (!node || depth > 8) return null;
       if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) return fields(node.expression, env, depth + 1);
       if (ts.isIdentifier(node)) return fields(initializer(node), env, depth + 1);
+      if (ts.isConditionalExpression(node)) {
+        const yes = condition(node.condition, env);
+        if (yes !== undefined) return fields(yes ? node.whenTrue : node.whenFalse, env, depth + 1);
+        const branches = [fields(node.whenTrue, env, depth + 1), fields(node.whenFalse, env, depth + 1)];
+        const merged = new Map();
+        merged.optionalKeys = new Set();
+        for (const key of new Set(branches.flatMap(branch => [...(branch?.keys() ?? [])]))) {
+          merged.set(key, unique(branches.flatMap(branch => branch?.get(key) ?? [])));
+          if (branches.some(branch => !branch?.has(key) || branch.optionalKeys?.has(key))) merged.optionalKeys.add(key);
+        }
+        return merged;
+      }
+      if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+        const yes = condition(node.left, env), result = yes === false ? new Map() : fields(node.right, env, depth + 1);
+        if (result && yes === undefined) result.optionalKeys = new Set(result.keys());
+        return result;
+      }
       if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
         const fn = functions.get(node.expression.text);
         if (!fn) return null;
@@ -236,6 +253,7 @@ export function finiteTranslationReferences(sources) {
       }
       if (!ts.isObjectLiteralExpression(node)) return null;
       const result = new Map();
+      result.optionalKeys = new Set();
       const fieldValue = (key, expression) => {
         const priorTrace = valueTrace;
         valueTrace = { unknown: false };
@@ -244,19 +262,34 @@ export function finiteTranslationReferences(sources) {
         if (valueTrace.unknown) result.set(`?${key}`, ['unknown']);
         valueTrace = priorTrace;
         result.set(key, resolved);
+        result.optionalKeys.delete(key);
+        result.optionalKeys.delete(`?${key}`);
       };
       for (const property of node.properties) {
-        if (ts.isSpreadAssignment(property)) for (const [key, value] of fields(property.expression, env, depth + 1) ?? []) result.set(key, value);
+        if (ts.isSpreadAssignment(property)) {
+          const spread = fields(property.expression, env, depth + 1);
+          for (const [key, value] of spread ?? []) {
+            if (spread.optionalKeys?.has(key)) {
+              if (!result.has(key)) result.optionalKeys.add(key);
+              result.set(key, unique([...(result.get(key) ?? []), ...value]));
+            } else {
+              result.set(key, value);
+              result.optionalKeys.delete(key);
+              // 后面的确定字段会覆盖之前未知属性，不能留下已被覆盖的待核对标记。
+              if (!key.startsWith('?') && !spread.has(`?${key}`)) result.delete(`?${key}`);
+            }
+          }
+        }
         else if (ts.isPropertyAssignment(property)) fieldValue(property.name.getText().replace(/^['"]|['"]$/g, ''), property.initializer);
         else if (ts.isShorthandPropertyAssignment(property)) fieldValue(property.name.text, property.name);
       }
       return result;
     }
     function emitField(field) {
-      if (!field || !field.get('key')?.length || field.has('label') || field.has('name')) return;
+      if (!field || !field.get('key')?.length || field.has('label') && !field.optionalKeys?.has('label') || field.has('name') && !field.optionalKeys?.has('name')) return;
       const emit = (property, prefix) => (field.get(property) ?? []).forEach(value => add(prefix + value, file, '有限表单声明', `${property}: ${value}`));
       if (field.get('labelKey')?.length) emit('labelKey', 'admin.compute.');
-      else for (const key of field.get('key')) add(`admin.compute.${key === 'startsAt' ? 'common.rangeStart' : `field.${key}`}`, file, '有限表单字段', key);
+      if (!field.get('labelKey')?.length || field.optionalKeys?.has('labelKey')) for (const key of field.get('key')) add(`admin.compute.${key === 'startsAt' ? 'common.rangeStart' : `field.${key}`}`, file, '有限表单字段', key);
       emit('hint', 'admin.compute.hint.');
       emit('group', 'admin.compute.group.');
       emit('validationKey', 'admin.compute.');
@@ -366,12 +399,7 @@ export function finiteTranslationReferences(sources) {
         visit(parsed);
       }
     }
-    // 不把无法求值的表达式隐藏为“已全面覆盖”；交付审计包含逐项人工复核清单。
-    for (const [name, prefix] of wrappers) if (prefix && !['admin.compute.', 'admin.', 'user.', 'server.'].includes(prefix)) {
-      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      for (const match of text.matchAll(new RegExp(`\\b${escaped}\\(\\s*([^)'"\x60][^)]*)\\)`, 'g')))
-        unresolved.push({ file, kind: '包装器动态参数', expression: `${prefix} + (${match[1].trim()})` });
-    }
+    // calls 已按语法树保留完整未知参数；不要再用正则把函数声明或截断的嵌套参数误报为额外缺口。
   }
   const dedupe = rows => [...new Map(rows.map(row => [JSON.stringify(row), row])).values()];
   return { references: dedupe(references), unresolved: dedupe(unresolved) };

@@ -1,4 +1,6 @@
 {
+  "admin.compute.v35Ledger.maxBusinessAmount": "Maximum business amount",
+  "admin.compute.v35Ledger.minBusinessAmount": "Minimum business amount",
   "admin.account.account": "account",
   "admin.account.add": "Add account",
   "admin.account.agentAccounts": "Agent accounts",

@@ -43,7 +43,7 @@ class TranslationBodyCacheTest {
         JdbcDataSource source = new JdbcDataSource();
         source.setURL("jdbc:h2:mem:translation-cache-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1");
         jdbc = new JdbcTemplate(source);
-        jdbc.execute("CREATE TABLE system_setting(setting_key VARCHAR(100) PRIMARY KEY,setting_value VARCHAR(200),updated_at TIMESTAMP)");
+        jdbc.execute("CREATE TABLE system_setting(setting_key VARCHAR(100) PRIMARY KEY,setting_value VARCHAR(200),revision BIGINT NOT NULL DEFAULT 0,updated_at TIMESTAMP)");
         jdbc.update("INSERT INTO system_setting(setting_key,setting_value) VALUES(?,?)", TranslationBodyCache.REVISION_KEY, UUID.randomUUID().toString());
         jdbc.execute("CREATE TABLE word(id INT PRIMARY KEY,body VARCHAR(200))");
         jdbc.update("INSERT INTO word VALUES(1,'旧译文')");
@@ -242,7 +242,7 @@ class TranslationBodyCacheTest {
         pool.setJdbcUrl("jdbc:h2:mem:translation-pool-"+UUID.randomUUID()+";DB_CLOSE_DELAY=-1");
         pool.setMaximumPoolSize(1);pool.setMinimumIdle(1);pool.setConnectionTimeout(2500);
         var db=new JdbcTemplate(pool);
-        db.execute("CREATE TABLE system_setting(setting_key VARCHAR(100) PRIMARY KEY,setting_value VARCHAR(200),updated_at TIMESTAMP)");
+        db.execute("CREATE TABLE system_setting(setting_key VARCHAR(100) PRIMARY KEY,setting_value VARCHAR(200),revision BIGINT NOT NULL DEFAULT 0,updated_at TIMESTAMP)");
         db.update("INSERT INTO system_setting(setting_key,setting_value) VALUES(?,?)",TranslationBodyCache.REVISION_KEY,UUID.randomUUID().toString());
         db.execute("CREATE TABLE word(id INT PRIMARY KEY,body VARCHAR(100))");db.update("INSERT INTO word VALUES(1,'旧值')");
         var manager=new DataSourceTransactionManager(pool);

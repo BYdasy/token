@@ -1,4 +1,6 @@
 {
+  "admin.compute.v35Ledger.maxBusinessAmount": "最高业务金额",
+  "admin.compute.v35Ledger.minBusinessAmount": "最低业务金额",
   "admin.account.account": "账号",
   "admin.account.add": "新增账号",
   "admin.account.agentAccounts": "代理账号",
